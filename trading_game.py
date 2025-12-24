@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 # --- 1. 全域設定 ---
-st.set_page_config(page_title="飆股當沖 - 資安加密版", layout="wide", page_icon="🔐")
+st.set_page_config(page_title="飆股當沖 - 戰力積分版", layout="wide", page_icon="⚔️")
 
 # CSS 優化
 st.markdown("""
@@ -27,9 +27,7 @@ st.markdown("""
     }
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
     
-    .asset-box {
-        padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px;
-    }
+    .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
     .asset-label { font-size: 14px; color: #666; }
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
     
@@ -47,7 +45,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-FILES = { "leaderboard": "leaderboard_tw_v3.csv", "feedback": "feedback.csv", "traffic": "traffic_log.csv" }
+FILES = { "leaderboard": "leaderboard_tw_v4.csv", "feedback": "feedback.csv", "traffic": "traffic_log.csv" }
 
 HOT_STOCKS_MAP = {
     '8043.TWO': '蜜望實', '6127.TWO': '九豪', '6706.TW': '惠特', '4967.TW': '十銓',
@@ -62,16 +60,19 @@ HOT_STOCKS_MAP = {
     '2603.TW': '長榮', '2609.TW': '陽明', '2409.TW': '友達', '6116.TW': '彩晶'
 }
 
+# --- 3. 初始化 Session State ---
 default_values = {
     'balance': 10000000.0, 'position': 0, 'avg_cost': 0.0, 'step': 0,
     'history': [], 'trades_visual': [], 'data': None, 'ticker': "",
     'stock_name': "", 'nickname': "", 'game_started': False, 
-    'auto_play': False, 'first_load': True, 'is_admin': False
+    'auto_play': False, 'first_load': True, 'is_admin': False,
+    'trade_returns': [] # 新增：紀錄每一筆交易的報酬率
 }
 
 for key, value in default_values.items():
     if key not in st.session_state: st.session_state[key] = value
 
+# --- 4. 後台與數據系統 ---
 def log_traffic():
     if 'traffic_logged' not in st.session_state:
         try:
@@ -96,6 +97,7 @@ def get_admin_data():
     else: data['leaderboard'] = pd.DataFrame()
     return data
 
+# --- 5. 核心邏輯 ---
 def calculate_technical_indicators(df):
     try:
         df['MA5'] = df['Close'].rolling(window=5).mean()
@@ -134,6 +136,7 @@ def load_data():
 def reset_game():
     st.session_state.balance = 10000000.0; st.session_state.position = 0; st.session_state.avg_cost = 0.0
     st.session_state.history = []; st.session_state.trades_visual = []; st.session_state.auto_play = False
+    st.session_state.trade_returns = [] # 重置交易績效
     with st.spinner('🎲 正在隨機抽取 (包含空頭股)...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
@@ -144,12 +147,18 @@ def execute_trade(action, price, qty, current_step_index):
         fee = price * qty * 0.002
         
         if action == "buy":
-            if pos < 0:
+            if pos < 0: # 空單回補
                 cover_qty = min(abs(pos), qty); remaining_qty = qty - cover_qty
                 profit = (avg - price) * cover_qty; cost = price * cover_qty
+                
+                # 紀錄單筆報酬率 (空單獲利% = (均價-現價)/均價)
+                trade_roi = (avg - price) / avg * 100
+                st.session_state.trade_returns.append(trade_roi)
+                
                 st.session_state.balance -= (cost + fee); st.session_state.balance += (cost + profit)
                 st.session_state.position += cover_qty
-                st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)})")
+                st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
+                
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
@@ -166,11 +175,17 @@ def execute_trade(action, price, qty, current_step_index):
                 else: st.toast("❌ 資金不足", icon="💸")
 
         elif action == "sell":
-            if pos > 0:
+            if pos > 0: # 多單賣出
                 sell_qty = min(pos, qty); remaining_qty = qty - sell_qty
                 profit = (price - avg) * sell_qty; revenue = price * sell_qty
+                
+                # 紀錄單筆報酬率 (多單獲利% = (現價-均價)/均價)
+                trade_roi = (price - avg) / avg * 100
+                st.session_state.trade_returns.append(trade_roi)
+
                 st.session_state.balance += (revenue - fee); st.session_state.position -= sell_qty
-                st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)})")
+                st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
+                
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
@@ -188,13 +203,35 @@ def execute_trade(action, price, qty, current_step_index):
 
         marker_type = 'buy' if action == 'buy' else 'sell'
         st.session_state.trades_visual.append({'index': current_step_index, 'price': price, 'type': marker_type})
-    except Exception: pass
+    except Exception as e: pass
 
 def save_score(player, ticker, name, assets, roi):
     try:
-        new = pd.DataFrame([{"日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": name, "最終資產": round(assets, 0), "報酬率": roi}])
+        # 1. 計算狙擊率 (平均單筆報酬)
+        trades = st.session_state.trade_returns
+        avg_sniper = sum(trades) / len(trades) if trades else 0.0
+        
+        # 2. 計算總損益
+        total_profit = assets - 10000000
+        
+        # 3. 計算綜合戰力 (Power Score)
+        # 公式：(狙擊率 * 40) + (總報酬率 * 30) + (總獲利(萬) * 30 * 0.1係數修正)
+        # 修正係數是為了讓獲利金額(絕對值)不要過度膨脹分數
+        profit_score = (total_profit / 10000) # 每賺1萬得1分
+        power_score = (avg_sniper * 40) + (roi * 30) + (profit_score * 0.3 * 30) 
+        
+        new = pd.DataFrame([{
+            "日期": time.strftime("%Y-%m-%d %H:%M"), 
+            "玩家": player, 
+            "股名": name, 
+            "綜合戰力": round(power_score, 1),
+            "狙擊率(%)": round(avg_sniper, 2),
+            "總報酬(%)": round(roi, 2),
+            "總獲利($)": int(total_profit)
+        }])
+        
         hdr = not os.path.exists(FILES["leaderboard"]); new.to_csv(FILES["leaderboard"], mode='a', header=hdr, index=False)
-    except: pass
+    except Exception as e: print(e)
 
 def save_feedback(name, text):
     try:
@@ -208,13 +245,10 @@ def save_feedback(name, text):
 # --- 6. 程式進入點 ---
 log_traffic()
 
-# ★★★ 安全驗證邏輯 Start ★★★
-# 嘗試從 secrets 讀取密碼，如果沒設定，預設為空字串 (會導致無法登入)
 try:
     ADMIN_PASSWORD = st.secrets["admin_password"]
 except:
     ADMIN_PASSWORD = "admin_password_not_set"
-# ★★★ 安全驗證邏輯 End ★★★
 
 if st.session_state.is_admin:
     st.title("🔒 系統管理後台")
@@ -232,11 +266,11 @@ if st.session_state.is_admin:
         if os.path.exists(FILES["feedback"]): st.dataframe(pd.read_csv(FILES["feedback"]), use_container_width=True)
     with c2: 
         st.subheader("🏆 英雄榜")
-        if not admin_data['leaderboard'].empty: st.dataframe(admin_data['leaderboard'].sort_index(ascending=False), use_container_width=True)
+        if not admin_data['leaderboard'].empty: st.dataframe(admin_data['leaderboard'].sort_values(by="綜合戰力", ascending=False), use_container_width=True)
 
 else:
     if not st.session_state.game_started:
-        st.markdown("<h1 style='text-align: center;'>⚡ 飆股當沖 - 資安加密版</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>⚡ 飆股當沖 - 戰力積分版</h1>", unsafe_allow_html=True)
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
@@ -260,12 +294,8 @@ else:
             with st.expander("🔐 管理員登入"):
                 pwd = st.text_input("密碼", type="password")
                 if st.button("登入"):
-                    # ★★★ 使用 st.secrets 進行驗證 ★★★
-                    if pwd == ADMIN_PASSWORD:
-                        st.session_state.is_admin = True
-                        st.rerun()
-                    else:
-                        st.error("密碼錯誤")
+                    if pwd == ADMIN_PASSWORD: st.session_state.is_admin = True; st.rerun()
+                    else: st.error("錯誤")
 
     else:
         df = st.session_state.data
@@ -324,10 +354,11 @@ else:
             if c_slow.button("🐢", help="減速", use_container_width=True): st.toast("無法減速！", icon="😈")
 
             st.divider()
+            
             if st.button("🏳️ 結算 / 揭曉答案", use_container_width=True):
                 real_name = st.session_state.stock_name
                 real_ticker = st.session_state.ticker
-                save_score(st.session_state.nickname, real_ticker, real_name, est_total, f"{roi:.2f}%")
+                save_score(st.session_state.nickname, real_ticker, real_name, est_total, roi)
                 st.balloons()
                 st.markdown(f"<div class='reveal-box'>🎉 真相大白：{real_name} ({real_ticker})</div>", unsafe_allow_html=True)
                 st.info("請等待 3 秒後自動開始下一局...")
@@ -338,7 +369,7 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
         
-        tab1, tab2, tab3 = st.tabs(["📊 操盤室", "🏆 英雄榜", "📜 版本日誌"])
+        tab1, tab2, tab3 = st.tabs(["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"])
 
         with tab1:
             display_start = max(0, curr_idx - 100)
@@ -373,17 +404,24 @@ else:
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
 
         with tab2:
-            st.markdown("### 🏆 英雄榜")
+            st.markdown("### 🏆 華爾街英雄榜 (依照綜合戰力排序)")
+            st.markdown("""
+            > **⚔️ 戰力公式**：
+            > * **狙擊率 (40%)**：平均單筆交易報酬率，考驗你的精準度。
+            > * **總報酬 (30%)**：本局總資產報酬率，考驗你的穩定性。
+            > * **獲利力 (30%)**：絕對獲利金額，考驗你的部位管理。
+            """)
             if os.path.exists(FILES["leaderboard"]):
-                try: st.dataframe(pd.read_csv(FILES["leaderboard"]).sort_index(ascending=False), use_container_width=True)
+                try: st.dataframe(pd.read_csv(FILES["leaderboard"]).sort_values(by="綜合戰力", ascending=False), use_container_width=True)
                 except: st.write("無紀錄")
             else: st.info("尚無紀錄")
 
         with tab3:
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.0**: 重大資安升級，使用 Streamlit Secrets 管理密碼，程式碼中不再顯示明文密碼。
-            * **v3.9**: 介面修復，空單回補優化。
+            * **v4.1**: 新增「綜合戰力」評分系統，加入狙擊率指標。
+            * **v4.0**: 資安加密升級。
+            * **v3.9**: 介面與交易邏輯修復。
             * **v3.8**: 地獄盲測版。
             """)
         
