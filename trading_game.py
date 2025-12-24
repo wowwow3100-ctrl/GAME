@@ -391,7 +391,7 @@ else:
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
 
         with tab2:
-            st.markdown("### 🏆 華爾街英雄榜 (依照綜合戰力排序)")
+            st.markdown("### 🏆 街英雄榜 (依照綜合戰力排序)")
             st.markdown("""
             > **⚔️ 戰力公式**：
             > * **狙擊率 (40%)**：平均單筆交易報酬率，考驗你的精準度。
