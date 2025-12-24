@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 # --- 1. 全域設定 ---
-st.set_page_config(page_title="飆股當沖 - 戰力積分版", layout="wide", page_icon="⚔️")
+st.set_page_config(page_title="當沖挑戰賽", layout="wide", page_icon="⚔️")
 
 # CSS 優化
 st.markdown("""
@@ -275,10 +275,12 @@ else:
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
         當沖賺得快，賠得也快，現實生活還是乖乖做波段吧。<br>
-        不小心熬夜開發，我要去補眠了 😴<br>
-        如果畫面突然重啟，代表我正在修改程式，請見諒。<br>
+        開發到上頭，真有成就感，我要去補眠了 😴<br>
+       
         如果你喜歡，歡迎脆追蹤按起來 <a href="https://www.threads.net/@wowwow31001" target="_blank">wowwow31001</a>!<br>
-        但真正有料的是12/12日那篇XD
+        但真正有料的是12/7日那篇文章
+
+         如果畫面突然重啟，代表我正在修改程式，請見諒。<br>
         </div>
         """, unsafe_allow_html=True)
         
