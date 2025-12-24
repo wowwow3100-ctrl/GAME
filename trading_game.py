@@ -10,7 +10,8 @@ import os
 from datetime import datetime
 
 # --- 1. 全域設定 ---
-st.set_page_config(page_title="當沖挑戰賽", layout="wide", page_icon="⚔️")
+# [更新] 標題改為「交易挑戰賽，戰力積分版」
+st.set_page_config(page_title="交易挑戰賽，戰力積分版", layout="wide", page_icon="⚔️")
 
 # CSS 優化
 st.markdown("""
@@ -34,6 +35,7 @@ st.markdown("""
     .warning-text {
         color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800;
         border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0;
+        line-height: 1.6;
     }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
     .warning-text a:hover { border-bottom: 1px solid #E1306C; }
@@ -66,7 +68,7 @@ default_values = {
     'history': [], 'trades_visual': [], 'data': None, 'ticker': "",
     'stock_name': "", 'nickname': "", 'game_started': False, 
     'auto_play': False, 'first_load': True, 'is_admin': False,
-    'trade_returns': [] # 新增：紀錄每一筆交易的報酬率
+    'trade_returns': []
 }
 
 for key, value in default_values.items():
@@ -136,7 +138,7 @@ def load_data():
 def reset_game():
     st.session_state.balance = 10000000.0; st.session_state.position = 0; st.session_state.avg_cost = 0.0
     st.session_state.history = []; st.session_state.trades_visual = []; st.session_state.auto_play = False
-    st.session_state.trade_returns = [] # 重置交易績效
+    st.session_state.trade_returns = []
     with st.spinner('🎲 正在隨機抽取 (包含空頭股)...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
@@ -147,18 +149,15 @@ def execute_trade(action, price, qty, current_step_index):
         fee = price * qty * 0.002
         
         if action == "buy":
-            if pos < 0: # 空單回補
+            if pos < 0:
                 cover_qty = min(abs(pos), qty); remaining_qty = qty - cover_qty
                 profit = (avg - price) * cover_qty; cost = price * cover_qty
-                
-                # 紀錄單筆報酬率 (空單獲利% = (均價-現價)/均價)
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
                 
                 st.session_state.balance -= (cost + fee); st.session_state.balance += (cost + profit)
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
-                
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
@@ -175,17 +174,14 @@ def execute_trade(action, price, qty, current_step_index):
                 else: st.toast("❌ 資金不足", icon="💸")
 
         elif action == "sell":
-            if pos > 0: # 多單賣出
+            if pos > 0:
                 sell_qty = min(pos, qty); remaining_qty = qty - sell_qty
                 profit = (price - avg) * sell_qty; revenue = price * sell_qty
-                
-                # 紀錄單筆報酬率 (多單獲利% = (現價-均價)/均價)
                 trade_roi = (price - avg) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
 
                 st.session_state.balance += (revenue - fee); st.session_state.position -= sell_qty
                 st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
-                
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
@@ -207,31 +203,19 @@ def execute_trade(action, price, qty, current_step_index):
 
 def save_score(player, ticker, name, assets, roi):
     try:
-        # 1. 計算狙擊率 (平均單筆報酬)
         trades = st.session_state.trade_returns
         avg_sniper = sum(trades) / len(trades) if trades else 0.0
-        
-        # 2. 計算總損益
         total_profit = assets - 10000000
-        
-        # 3. 計算綜合戰力 (Power Score)
-        # 公式：(狙擊率 * 40) + (總報酬率 * 30) + (總獲利(萬) * 30 * 0.1係數修正)
-        # 修正係數是為了讓獲利金額(絕對值)不要過度膨脹分數
-        profit_score = (total_profit / 10000) # 每賺1萬得1分
+        profit_score = (total_profit / 10000) 
         power_score = (avg_sniper * 40) + (roi * 30) + (profit_score * 0.3 * 30) 
         
         new = pd.DataFrame([{
-            "日期": time.strftime("%Y-%m-%d %H:%M"), 
-            "玩家": player, 
-            "股名": name, 
-            "綜合戰力": round(power_score, 1),
-            "狙擊率(%)": round(avg_sniper, 2),
-            "總報酬(%)": round(roi, 2),
-            "總獲利($)": int(total_profit)
+            "日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": name, 
+            "綜合戰力": round(power_score, 1), "狙擊率(%)": round(avg_sniper, 2),
+            "總報酬(%)": round(roi, 2), "總獲利($)": int(total_profit)
         }])
-        
         hdr = not os.path.exists(FILES["leaderboard"]); new.to_csv(FILES["leaderboard"], mode='a', header=hdr, index=False)
-    except Exception as e: print(e)
+    except: pass
 
 def save_feedback(name, text):
     try:
@@ -245,10 +229,8 @@ def save_feedback(name, text):
 # --- 6. 程式進入點 ---
 log_traffic()
 
-try:
-    ADMIN_PASSWORD = st.secrets["admin_password"]
-except:
-    ADMIN_PASSWORD = "admin_password_not_set"
+try: ADMIN_PASSWORD = st.secrets["admin_password"]
+except: ADMIN_PASSWORD = "admin_password_not_set"
 
 if st.session_state.is_admin:
     st.title("🔒 系統管理後台")
@@ -270,23 +252,26 @@ if st.session_state.is_admin:
 
 else:
     if not st.session_state.game_started:
-        st.markdown("<h1 style='text-align: center;'>⚡ 飆股當沖 - 戰力積分版</h1>", unsafe_allow_html=True)
+        # [更新] 標題
+        st.markdown("<h1 style='text-align: center;'>⚡ 交易挑戰賽，戰力積分版</h1>", unsafe_allow_html=True)
+        # [更新] 歡迎詞內容
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
         當沖賺得快，賠得也快，現實生活還是乖乖做波段吧。<br>
-        開發到上頭，真有成就感，我要去補眠了 😴<br>
-       
-        如果你喜歡，歡迎脆追蹤按起來 <a href="https://www.threads.net/@wowwow31001" target="_blank">wowwow31001</a>!<br>
-        但真正有料的是12/7日那篇文章
-
-         如果畫面突然重啟，代表我正在修改程式，請見諒。<br>
+        不小心開發這程式到上頭，成就感滿滿，希望你們喜歡，我要去補眠了 😴<br>
+        <br>
+        歡迎脆追蹤按起來 <a href="https://www.threads.net/@wowwow31001" target="_blank">wowwow31001</a>!<br>
+        真正有料的是12/7日那篇文章<br>
+        <br>
+        如果畫面突然重啟，代表我正在修改程式，請見諒。
         </div>
         """, unsafe_allow_html=True)
         
         col_a, col_b, col_c = st.columns([1,2,1])
         with col_b:
             with st.form("login"):
+                # [更新] 預設暱稱
                 name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name; st.session_state.game_started = True; reset_game(); st.rerun()
