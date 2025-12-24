@@ -8,10 +8,10 @@ import random
 import time
 import os
 from datetime import datetime
+import math
 
 # --- 1. 全域設定 ---
-# [更新] 標題改為「交易挑戰賽，戰力積分版」
-st.set_page_config(page_title="交易挑戰賽，戰力積分版", layout="wide", page_icon="⚔️")
+st.set_page_config(page_title="交易挑戰賽 - 斷頭停損版", layout="wide", page_icon="💀")
 
 # CSS 優化
 st.markdown("""
@@ -44,6 +44,26 @@ st.markdown("""
         padding: 15px; background-color: #d4edda; color: #155724; border-radius: 8px;
         text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 10px; border: 2px solid #c3e6cb;
     }
+    
+    /* 斷頭警告樣式 */
+    .margin-call-box {
+        padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
+        text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 20px; 
+        border: 3px solid #ff0000; animation: shake 0.5s;
+    }
+    @keyframes shake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      10% { transform: translate(-1px, -2px) rotate(-1deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      30% { transform: translate(3px, 2px) rotate(0deg); }
+      40% { transform: translate(1px, -1px) rotate(1deg); }
+      50% { transform: translate(-1px, 2px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      70% { transform: translate(3px, 1px) rotate(-1deg); }
+      80% { transform: translate(-1px, -1px) rotate(1deg); }
+      90% { transform: translate(1px, 2px) rotate(0deg); }
+      100% { transform: translate(1px, -2px) rotate(-1deg); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,7 +88,7 @@ default_values = {
     'history': [], 'trades_visual': [], 'data': None, 'ticker': "",
     'stock_name': "", 'nickname': "", 'game_started': False, 
     'auto_play': False, 'first_load': True, 'is_admin': False,
-    'trade_returns': []
+    'trade_returns': [], 'accumulate_mode': False, 'last_equity': 10000000.0
 }
 
 for key, value in default_values.items():
@@ -136,9 +156,23 @@ def load_data():
     return None, None, None
 
 def reset_game():
-    st.session_state.balance = 10000000.0; st.session_state.position = 0; st.session_state.avg_cost = 0.0
-    st.session_state.history = []; st.session_state.trades_visual = []; st.session_state.auto_play = False
+    if st.session_state.accumulate_mode:
+        # 如果上一局破產 (last_equity <= 0)，則強制重置為 1000 萬，不然遊戲無法進行
+        if st.session_state.last_equity <= 0:
+            st.session_state.balance = 10000000.0
+            st.toast("👼 破產保護啟動！資金已重置為 1,000 萬", icon="🔄")
+        else:
+            st.session_state.balance = st.session_state.last_equity
+    else:
+        st.session_state.balance = 10000000.0
+        
+    st.session_state.position = 0
+    st.session_state.avg_cost = 0.0
+    st.session_state.history = []
+    st.session_state.trades_visual = []
+    st.session_state.auto_play = False
     st.session_state.trade_returns = []
+    
     with st.spinner('🎲 正在隨機抽取 (包含空頭股)...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
@@ -171,7 +205,7 @@ def execute_trade(action, price, qty, current_step_index):
                     total_cost = (avg * pos) + cost; new_pos_size = pos + qty
                     st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position += qty
                     st.session_state.history.append(f"🔴 買進 {qty}股 @ {price:.2f}")
-                else: st.toast("❌ 資金不足", icon="💸")
+                else: st.toast(f"❌ 資金不足！買 {qty} 股需要 {int(cost)}", icon="💸")
 
         elif action == "sell":
             if pos > 0:
@@ -195,7 +229,7 @@ def execute_trade(action, price, qty, current_step_index):
                     total_cost = (avg * abs(pos)) + cost; new_pos_size = abs(pos) + qty
                     st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position -= qty
                     st.session_state.history.append(f"🟢 放空 {qty}股 @ {price:.2f}")
-                else: st.toast("❌ 資金不足", icon="💸")
+                else: st.toast(f"❌ 資金不足！(放空保證金不足)", icon="💸")
 
         marker_type = 'buy' if action == 'buy' else 'sell'
         st.session_state.trades_visual.append({'index': current_step_index, 'price': price, 'type': marker_type})
@@ -252,9 +286,7 @@ if st.session_state.is_admin:
 
 else:
     if not st.session_state.game_started:
-        # [更新] 標題
         st.markdown("<h1 style='text-align: center;'>⚡ 交易挑戰賽，戰力積分版</h1>", unsafe_allow_html=True)
-        # [更新] 歡迎詞內容
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
@@ -271,10 +303,14 @@ else:
         col_a, col_b, col_c = st.columns([1,2,1])
         with col_b:
             with st.form("login"):
-                # [更新] 預設暱稱
                 name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
+                is_accumulate = st.checkbox("🏆 啟用【資金繼承模式】(本局損益會帶到下一局)")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
-                    st.session_state.nickname = name; st.session_state.game_started = True; reset_game(); st.rerun()
+                    st.session_state.nickname = name
+                    st.session_state.accumulate_mode = is_accumulate
+                    st.session_state.game_started = True
+                    reset_game()
+                    st.rerun()
         
         with st.sidebar:
             st.markdown("---")
@@ -304,8 +340,36 @@ else:
         est_total = st.session_state.balance + (pos * curr_price if pos > 0 else (abs(pos)*avg + unrealized if pos < 0 else 0))
         roi = ((est_total - 10000000) / 10000000) * 100
 
+        # ★★★ 斷頭機制 (Game Over Logic) ★★★
+        if est_total <= 0:
+            st.session_state.auto_play = False
+            real_name = st.session_state.stock_name
+            real_ticker = st.session_state.ticker
+            
+            # 強制結算並記錄 (資產歸0)
+            save_score(st.session_state.nickname, real_ticker, real_name, 0, -100.0)
+            
+            # 顯示斷頭畫面
+            st.markdown(f"""
+            <div class='margin-call-box'>
+                💀 幫QQ！保證金維持率不足，已被強制斷頭出場！<br>
+                <span style='font-size: 18px; color: #555;'>總資產歸零 | 真相：{real_name} ({real_ticker})</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 設定下一局破產狀態
+            st.session_state.last_equity = 0 
+            
+            if st.button("💸 破產重來 (資金重置)", type="primary", use_container_width=True):
+                reset_game()
+                st.rerun()
+            
+            st.stop() # 停止渲染後續內容
+
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
+            
+            if st.session_state.accumulate_mode: st.caption("🔥 資金繼承模式 ON")
             st.markdown(f"**標的: {masked_name}** (5分K)")
             
             pnl_color = "red" if unrealized >= 0 else "green"
@@ -326,6 +390,10 @@ else:
             c_price.markdown(f"<div class='price-text'>{curr_price:.1f}</div>", unsafe_allow_html=True)
             qty = c_qty.number_input("股數", 1000, 50000, 1000, step=1000, label_visibility="collapsed")
             
+            max_buy = int(st.session_state.balance // curr_price // 1000)
+            if max_buy < 1: st.caption(f"⚠️ 資金不足買1張")
+            else: st.caption(f"💰 可買: {max_buy} 張")
+
             b_col, s_col = st.columns(2)
             if b_col.button(f"買進", use_container_width=True): execute_trade("buy", curr_price, qty, curr_idx); st.rerun()
             if s_col.button(f"賣出", use_container_width=True): execute_trade("sell", curr_price, qty, curr_idx); st.rerun()
@@ -348,7 +416,14 @@ else:
                 save_score(st.session_state.nickname, real_ticker, real_name, est_total, roi)
                 st.balloons()
                 st.markdown(f"<div class='reveal-box'>🎉 真相大白：{real_name} ({real_ticker})</div>", unsafe_allow_html=True)
-                st.info("請等待 3 秒後自動開始下一局...")
+                
+                st.session_state.last_equity = est_total
+                if st.session_state.accumulate_mode:
+                    msg = f"💰 本局結算 {int(est_total):,}，資金將帶入下一局！"
+                else:
+                    msg = "🔄 資金將重置為 1,000 萬"
+                
+                st.info(f"{msg} 請等待 3 秒...")
                 time.sleep(3); reset_game(); st.rerun()
 
             with st.popover("💬 回饋"):
@@ -391,7 +466,7 @@ else:
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
 
         with tab2:
-            st.markdown("### 🏆 街英雄榜 (依照綜合戰力排序)")
+            st.markdown("### 🏆 華爾街英雄榜 (依照綜合戰力排序)")
             st.markdown("""
             > **⚔️ 戰力公式**：
             > * **狙擊率 (40%)**：平均單筆交易報酬率，考驗你的精準度。
@@ -406,10 +481,10 @@ else:
         with tab3:
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.1**: 新增「綜合戰力」評分系統，加入狙擊率指標。
-            * **v4.0**: 資安加密升級。
-            * **v3.9**: 介面與交易邏輯修復。
-            * **v3.8**: 地獄盲測版。
+            * **v4.5**: 增加「斷頭停損機制」，虧損超過本金強制遊戲結束。
+            * **v4.4**: 增加「資金繼承模式」與「最大可買張數提示」。
+            * **v4.3**: 歡迎詞與標題更新。
+            * **v4.1**: 綜合戰力評分系統。
             """)
         
         if st.session_state.auto_play:
