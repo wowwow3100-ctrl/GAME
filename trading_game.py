@@ -3,21 +3,31 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import random
+import time
+import os
 
-# --- 頁面設定 ---
-st.set_page_config(page_title="當沖生命線戰法練習", layout="wide", page_icon="📈")
+# --- 1. 頁面與全域設定 ---
+st.set_page_config(page_title="當沖模擬器 - 旗艦版", layout="wide", page_icon="📈")
 
-# --- CSS 美化 ---
+# 自定義 CSS：讓字體變大，解決 "..." 擁擠問題
 st.markdown("""
 <style>
+    /* 調整 metric 指標的字體大小 */
+    [data-testid="stMetricValue"] {
+        font-size: 24px;
+    }
+    /* 讓按鈕顯眼一點 */
     .stButton>button {
-        height: 3em;
         font-weight: bold;
+        border-radius: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 初始化 Session State ---
+# 檔案路徑 (用來存排行榜)
+LEADERBOARD_FILE = "leaderboard.csv"
+
+# --- 2. 初始化 Session State ---
 default_values = {
     'balance': 100000.0,
     'position': 0,
@@ -27,51 +37,66 @@ default_values = {
     'data': None,
     'ticker': "",
     'nickname': "",
-    'game_started': False
+    'game_started': False,
+    'auto_play': False,  # 新增：控制自動播放
+    'speed': 1.0         # 新增：播放速度
 }
 
 for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 核心邏輯函數 ---
+# --- 3. 核心邏輯函數 ---
+
+def load_leaderboard():
+    if os.path.exists(LEADERBOARD_FILE):
+        return pd.read_csv(LEADERBOARD_FILE)
+    else:
+        return pd.DataFrame(columns=["日期", "玩家", "股票", "最終資產", "報酬率"])
+
+def save_score(player, ticker, assets, roi):
+    new_entry = pd.DataFrame([{
+        "日期": time.strftime("%Y-%m-%d %H:%M"),
+        "玩家": player,
+        "股票": ticker,
+        "最終資產": round(assets, 2),
+        "報酬率": f"{roi:.2f}%"
+    }])
+    if os.path.exists(LEADERBOARD_FILE):
+        df = pd.read_csv(LEADERBOARD_FILE)
+        df = pd.concat([df, new_entry], ignore_index=True)
+    else:
+        df = new_entry
+    df.to_csv(LEADERBOARD_FILE, index=False)
 
 def load_data():
-    tickers = ['NVDA', 'TSLA', 'AMD', 'TQQQ', 'SOXL', 'AAPL', 'MSFT']
+    tickers = ['NVDA', 'TSLA', 'AMD', 'TQQQ', 'SOXL', 'MSTR', 'COIN']
     selected_ticker = random.choice(tickers)
     
-    # 下載資料
     try:
-        with st.spinner(f"正在下載 {selected_ticker} 的歷史資料..."):
-            df = yf.download(selected_ticker, period="1mo", interval="5m", progress=False)
-            
-        # --- 修復錯誤的關鍵步驟 1 ---
-        # 如果 yfinance 回傳多層索引 (MultiIndex)，強制把它壓平
+        # 下載資料
+        df = yf.download(selected_ticker, period="1mo", interval="5m", progress=False)
+        
+        # 強制壓平多層索引 (修復之前的 bug)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
             
         if len(df) < 300:
-            st.error("資料不足，請重試")
             return None, None
 
-        # 計算指標
+        # 計算均線
         df['MA200'] = df['Close'].rolling(window=200).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
-        
         df.reset_index(inplace=True)
         
-        # 設定遊戲起始點
+        # 設定起始點
         max_start = len(df) - 150
-        if max_start > 200:
-            start_idx = random.randint(200, max_start)
-        else:
-            start_idx = 200
-            
+        start_idx = random.randint(200, max_start) if max_start > 200 else 200
         st.session_state.step = start_idx
         return selected_ticker, df
         
     except Exception as e:
-        st.error(f"資料讀取發生錯誤: {e}")
+        print(f"Error: {e}")
         return None, None
 
 def reset_game():
@@ -79,12 +104,11 @@ def reset_game():
     st.session_state.position = 0
     st.session_state.avg_cost = 0.0
     st.session_state.history = []
+    st.session_state.auto_play = False
     st.session_state.ticker, st.session_state.data = load_data()
 
-def trade(action, price, qty=10):
-    # 確保價格是純數字 (浮點數)
+def trade(action, price, qty):
     price = float(price)
-    
     if action == "buy":
         cost = price * qty
         if st.session_state.balance >= cost:
@@ -92,7 +116,7 @@ def trade(action, price, qty=10):
             total_cost = (st.session_state.avg_cost * st.session_state.position) + cost
             st.session_state.position += qty
             st.session_state.avg_cost = total_cost / st.session_state.position
-            st.session_state.history.append(f"🔴 {st.session_state.step}K | 買入 {qty} @ {price:.2f}")
+            st.session_state.history.append(f"🔴 買入 {qty} 股 @ {price:.2f}")
         else:
             st.toast("❌ 資金不足！")
             
@@ -106,118 +130,169 @@ def trade(action, price, qty=10):
                 st.session_state.avg_cost = 0.0
             
             icon = "💰" if profit > 0 else "💸"
-            st.session_state.history.append(f"🟢 {st.session_state.step}K | 賣出 {qty} @ {price:.2f} | 損益: {profit:.2f} {icon}")
+            st.session_state.history.append(f"🟢 賣出 {qty} 股 @ {price:.2f} (損益: {profit:.2f}) {icon}")
         else:
             st.toast("❌ 持倉不足！")
 
-# --- 主程式介面 ---
+# --- 4. 主程式介面 ---
 
-st.title("🎢 當沖模擬器：挑戰生命線戰法")
+# 使用 Tabs 分頁功能：把遊戲區跟排行榜分開
+tab1, tab2 = st.tabs(["🎮 當沖戰場", "🏆 排行榜與紀錄"])
 
-if not st.session_state.game_started:
-    st.info("👋 歡迎！請輸入暱稱開始訓練盤感。")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        name_input = st.text_input("輸入你的綽號", "ASUS股神")
-        if st.button("🚀 開始挑戰", use_container_width=True):
-            st.session_state.nickname = name_input
-            st.session_state.game_started = True
-            reset_game()
-            st.rerun()
+with tab1:
+    st.title("📈 閃電當沖王")
 
-else:
-    df = st.session_state.data
-    if df is None:
-        if st.button("重新載入資料"):
-            reset_game()
-            st.rerun()
-        st.stop()
+    if not st.session_state.game_started:
+        st.info("請輸入暱稱並點擊開始")
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            name_input = st.text_input("玩家暱稱", "神之手")
+            if st.button("🔥 開始遊戲", use_container_width=True):
+                st.session_state.nickname = name_input
+                st.session_state.game_started = True
+                reset_game()
+                st.rerun()
 
-    current_idx = st.session_state.step
-    display_df = df.iloc[current_idx-50 : current_idx+1]
-    
-    # --- 修復錯誤的關鍵步驟 2 ---
-    # 使用 .item() 確保只抓出單一數值，或者是直接轉 float
-    try:
-        current_bar = df.iloc[current_idx]
-        raw_price = current_bar['Close']
-        # 判斷是否為 Series (列表)，如果是就取第一個值，如果不是就直接轉 float
-        if isinstance(raw_price, pd.Series):
-             current_price = float(raw_price.iloc[0])
-        else:
-             current_price = float(raw_price)
-    except:
-        # 如果真的發生萬一，給個預設值防止當機
-        current_price = 0.0
-    
-    # --- 側邊欄 ---
-    with st.sidebar:
-        st.subheader(f"👤 {st.session_state.nickname} 的帳戶")
-        
+    else:
+        df = st.session_state.data
+        if df is None:
+            st.error("資料載入失敗，請按重開一局")
+            if st.button("重開"):
+                reset_game()
+                st.rerun()
+            st.stop()
+
+        # 取得當前數據
+        current_idx = st.session_state.step
+        try:
+            row = df.iloc[current_idx]
+            current_price = float(row['Close'].iloc[0]) if isinstance(row['Close'], pd.Series) else float(row['Close'])
+            current_time = row['Datetime']
+        except:
+            current_price = 0.0
+            current_time = "Unknown"
+
+        # --- A. 頂部資訊列 (解決擁擠問題) ---
+        # 計算總資產與未實現損益
         market_val = st.session_state.position * current_price
+        total_assets = st.session_state.balance + market_val
         unrealized = (current_price - st.session_state.avg_cost) * st.session_state.position if st.session_state.position > 0 else 0
-        
-        col_metric1, col_metric2 = st.columns(2)
-        col_metric1.metric("現金", f"${int(st.session_state.balance)}")
-        col_metric2.metric("持倉市值", f"${int(market_val)}")
-        st.metric("未實現損益", f"${unrealized:.2f}", delta_color="normal")
-        
-        st.divider()
-        
-        # 這裡就是原本報錯的地方，現在 current_price 已經保證是 float 了
-        st.write(f"當前價格: **{current_price:.2f}**")
-        order_qty = st.number_input("下單股數", min_value=1, value=10, step=10)
-        
-        c1, c2 = st.columns(2)
-        if c1.button("🔴 買進", use_container_width=True):
-            trade("buy", current_price, order_qty)
-        if c2.button("🟢 賣出", use_container_width=True):
-            trade("sell", current_price, order_qty)
+        roi = ((total_assets - 100000) / 100000) * 100
+
+        # 使用 4 個欄位寬鬆顯示
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("💰 現金餘額", f"${int(st.session_state.balance):,}")
+        m2.metric("📦 持倉庫存", f"{st.session_state.position} 股", f"市值 ${int(market_val):,}")
+        m3.metric("📊 未實現損益", f"${unrealized:,.0f}", delta_color="normal")
+        m4.metric("🚀 總資產報酬", f"${int(total_assets):,}", f"{roi:.2f}%")
 
         st.divider()
+
+        # --- B. 圖表區域 ---
+        display_df = df.iloc[current_idx-60 : current_idx+1]
         
-        if st.button("⏭️ 下一根 K 棒 (5分)", type="primary", use_container_width=True):
+        fig = go.Figure()
+        # K線
+        fig.add_trace(go.Candlestick(
+            x=display_df['Datetime'],
+            open=display_df['Open'], high=display_df['High'],
+            low=display_df['Low'], close=display_df['Close'],
+            name="K線"
+        ))
+        # 均線
+        fig.add_trace(go.Scatter(x=display_df['Datetime'], y=display_df['MA200'], line=dict(color='blue', width=2), name='200MA (生命線)'))
+        fig.add_trace(go.Scatter(x=display_df['Datetime'], y=display_df['MA60'], line=dict(color='orange', width=1), name='60MA'))
+
+        fig.update_layout(
+            title=f"{st.session_state.ticker} ({current_time}) - 價格: {current_price:.2f}",
+            height=500,
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=10, r=10, t=30, b=10)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # --- C. 操作控制區 ---
+        c1, c2, c3 = st.columns([1, 1, 1])
+        
+        # 1. 買賣操作
+        with c1:
+            st.subheader("交易")
+            qty = st.number_input("股數", 10, 1000, 10, step=10)
+            b_col, s_col = st.columns(2)
+            if b_col.button("🔴 買進", use_container_width=True):
+                trade("buy", current_price, qty)
+            if s_col.button("🟢 賣出", use_container_width=True):
+                trade("sell", current_price, qty)
+
+        # 2. 自動播放控制
+        with c2:
+            st.subheader("時間控制")
+            
+            # 自動播放按鈕邏輯
+            if st.session_state.auto_play:
+                if st.button("⏸️ 暫停", type="primary", use_container_width=True):
+                    st.session_state.auto_play = False
+                    st.rerun()
+            else:
+                if st.button("▶️ 自動播放", use_container_width=True):
+                    st.session_state.auto_play = True
+                    st.rerun()
+            
+            # 手動下一步
+            if st.button("⏭️ 下一根 K 棒", disabled=st.session_state.auto_play, use_container_width=True):
+                if st.session_state.step < len(df) - 1:
+                    st.session_state.step += 1
+                    st.rerun()
+
+        # 3. 遊戲狀態
+        with c3:
+            st.subheader("狀態")
+            if st.button("🏳️ 結算成績 / 重來", use_container_width=True):
+                # 儲存成績
+                save_score(st.session_state.nickname, st.session_state.ticker, total_assets, roi)
+                st.toast("✅ 成績已儲存到排行榜！")
+                time.sleep(1)
+                reset_game()
+                st.rerun()
+
+        # --- 自動播放邏輯 ---
+        if st.session_state.auto_play:
             if st.session_state.step < len(df) - 1:
+                time.sleep(0.5) # 控制速度 (0.5秒一根)
                 st.session_state.step += 1
                 st.rerun()
             else:
-                st.success("本局結束！")
+                st.session_state.auto_play = False
+                st.success("盤勢結束！")
 
-        if st.button("🔄 重開一局"):
-            reset_game()
-            st.rerun()
+        # --- 底部：交易紀錄 ---
+        with st.expander("📜 本局交易紀錄", expanded=False):
+            for log in reversed(st.session_state.history):
+                st.text(log)
 
-    # --- 主圖表 ---
-    fig = go.Figure()
+# --- 排行榜分頁 ---
+with tab2:
+    st.header("🏆 英雄榜 (維護紀錄)")
+    st.write("這裡記錄了所有玩家的輝煌戰績與損益結果。")
     
-    fig.add_trace(go.Candlestick(
-        x=display_df['Datetime'],
-        open=display_df['Open'], high=display_df['High'],
-        low=display_df['Low'], close=display_df['Close'],
-        name="K線"
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=display_df['Datetime'], y=display_df['MA200'],
-        line=dict(color='blue', width=2), name='生命線 (200MA)'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=display_df['Datetime'], y=display_df['MA60'],
-        line=dict(color='orange', width=1), name='60MA'
-    ))
-
-    fig.update_layout(
-        title=f"{st.session_state.ticker} - 5分鐘 K 線圖",
-        height=600,
-        xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=10, t=40, b=10)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    with st.expander("📜 交易紀錄", expanded=True):
-        if not st.session_state.history:
-            st.write("尚無交易")
-        for log in reversed(st.session_state.history):
-            st.text(log)
+    leaderboard_df = load_leaderboard()
+    
+    if not leaderboard_df.empty:
+        # 依照報酬率排序 (需處理字串轉數字)
+        try:
+            # 簡單排序，把報酬率最高的排上面
+            st.dataframe(leaderboard_df.sort_index(ascending=False), use_container_width=True)
+        except:
+            st.dataframe(leaderboard_df, use_container_width=True)
+            
+        # 提供下載 CSV 功能
+        csv = leaderboard_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "📥 下載完整紀錄 (CSV)",
+            csv,
+            "leaderboard.csv",
+            "text/csv",
+            key='download-csv'
+        )
+    else:
+        st.info("目前還沒有紀錄，快去玩一局吧！")
