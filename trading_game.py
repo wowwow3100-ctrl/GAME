@@ -285,7 +285,7 @@ else:
         col_a, col_b, col_c = st.columns([1,2,1])
         with col_b:
             with st.form("login"):
-                name = st.text_input("輸入你的綽號", "少年股神")
+                name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name; st.session_state.game_started = True; reset_game(); st.rerun()
         
