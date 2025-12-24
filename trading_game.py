@@ -27,9 +27,24 @@ st.markdown("""
     }
     .price-text { font-size: 24px; font-weight: bold; color: #333; }
     
-    /* 後台專用樣式 */
-    .admin-card {
-        padding: 20px; border-radius: 10px; background-color: #f0f2f6; margin-bottom: 10px;
+    /* 警語樣式 */
+    .warning-text {
+        color: #ff9800;
+        font-weight: bold;
+        padding: 10px;
+        border: 1px dashed #ff9800;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        text-align: center;
+        background-color: #fff3e0; /* 淡橘色背景讓文字更跳 */
+    }
+    .warning-text a {
+        color: #E1306C; /* Threads 品牌色 */
+        text-decoration: none;
+        border-bottom: 1px dashed #E1306C;
+    }
+    .warning-text a:hover {
+        border-bottom: 1px solid #E1306C;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -64,10 +79,10 @@ for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 4. 後台與數據系統 (新增部分) ---
+# --- 4. 後台與數據系統 ---
 
 def log_traffic():
-    """紀錄流量：每次 Session 啟動時寫入一次"""
+    """紀錄流量"""
     if 'traffic_logged' not in st.session_state:
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -80,34 +95,24 @@ def log_traffic():
 def get_admin_data():
     """讀取後台數據"""
     data = {}
-    # 讀取流量
     if os.path.exists(FILES["traffic"]):
         df_t = pd.read_csv(FILES["traffic"])
         df_t['Time'] = pd.to_datetime(df_t['Time'])
         data['traffic'] = df_t
-    else:
-        data['traffic'] = pd.DataFrame()
+    else: data['traffic'] = pd.DataFrame()
 
-    # 讀取回饋
     if os.path.exists(FILES["feedback"]):
         try:
-            # 簡單解析文字檔回饋
-            with open(FILES["feedback"], "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            with open(FILES["feedback"], "r", encoding="utf-8") as f: lines = f.readlines()
             data['feedback'] = lines
         except: data['feedback'] = []
-    else:
-        data['feedback'] = []
+    else: data['feedback'] = []
 
-    # 讀取英雄榜
-    if os.path.exists(FILES["leaderboard"]):
-        data['leaderboard'] = pd.read_csv(FILES["leaderboard"])
-    else:
-        data['leaderboard'] = pd.DataFrame()
-        
+    if os.path.exists(FILES["leaderboard"]): data['leaderboard'] = pd.read_csv(FILES["leaderboard"])
+    else: data['leaderboard'] = pd.DataFrame()
     return data
 
-# --- 5. 核心邏輯 (維持原樣) ---
+# --- 5. 核心邏輯 ---
 
 def calculate_technical_indicators(df):
     try:
@@ -193,17 +198,11 @@ def save_score(player, ticker, name, assets, roi):
 
 def save_feedback(name, text):
     try:
-        # 使用 CSV 格式儲存以便後台讀取
         timestamp = time.strftime('%Y-%m-%d %H:%M')
-        # 如果檔案不存在，先寫表頭
         if not os.path.exists(FILES["feedback"]):
-             with open(FILES["feedback"], "w", encoding="utf-8") as f:
-                f.write("Time,User,Message\n")
-        
-        # 清理文字中的逗號以免破壞 CSV 格式
+             with open(FILES["feedback"], "w", encoding="utf-8") as f: f.write("Time,User,Message\n")
         clean_text = text.replace(",", "，").replace("\n", " ")
-        with open(FILES["feedback"], "a", encoding="utf-8") as f:
-            f.write(f"{timestamp},{name},{clean_text}\n")
+        with open(FILES["feedback"], "a", encoding="utf-8") as f: f.write(f"{timestamp},{name},{clean_text}\n")
     except: pass
 
 # --- 6. 程式進入點 ---
@@ -211,83 +210,71 @@ def save_feedback(name, text):
 # 紀錄流量
 log_traffic()
 
-# 檢查是否為後台模式
 if st.session_state.is_admin:
     # ====== 後台介面 ======
     st.title("🔒 系統管理後台 (Admin Panel)")
-    if st.button("⬅️ 登出並返回遊戲"):
-        st.session_state.is_admin = False
-        st.rerun()
+    if st.button("⬅️ 登出並返回遊戲"): st.session_state.is_admin = False; st.rerun()
     
     admin_data = get_admin_data()
-    
-    # KPI 指標
     k1, k2, k3 = st.columns(3)
     k1.metric("👁️ 總瀏覽次數", len(admin_data['traffic']))
     k2.metric("💬 意見回饋數", len(admin_data['feedback']) if isinstance(admin_data['feedback'], list) else pd.read_csv(FILES["feedback"]).shape[0] if os.path.exists(FILES["feedback"]) else 0)
     k3.metric("🎮 總遊戲場數", len(admin_data['leaderboard']))
-
     st.divider()
 
-    # 流量圖表
     st.subheader("📈 流量趨勢")
     if not admin_data['traffic'].empty:
         df_t = admin_data['traffic']
-        # 依日期計算次數
         df_count = df_t.groupby(df_t['Time'].dt.date).size().reset_index(name='Visits')
         fig = px.line(df_count, x='Time', y='Visits', title='每日訪問人次')
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("尚無流量數據")
+    else: st.info("尚無流量數據")
 
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("💬 最新意見回饋")
         if os.path.exists(FILES["feedback"]):
-            try:
-                fb_df = pd.read_csv(FILES["feedback"])
-                st.dataframe(fb_df, use_container_width=True)
+            try: st.dataframe(pd.read_csv(FILES["feedback"]), use_container_width=True)
             except: st.write("格式讀取錯誤")
-        else:
-            st.info("尚無回饋")
-
+        else: st.info("尚無回饋")
     with c2:
         st.subheader("🏆 完整英雄榜")
-        if not admin_data['leaderboard'].empty:
-            st.dataframe(admin_data['leaderboard'].sort_index(ascending=False), use_container_width=True)
-        else:
-            st.info("尚無紀錄")
+        if not admin_data['leaderboard'].empty: st.dataframe(admin_data['leaderboard'].sort_index(ascending=False), use_container_width=True)
+        else: st.info("尚無紀錄")
 
 else:
     # ====== 正常遊戲介面 ======
     if not st.session_state.game_started:
         st.markdown("<h1 style='text-align: center;'>⚡ 飆股當沖 - 妖股特訓班</h1>", unsafe_allow_html=True)
-        st.markdown("<div style='text-align: center; color: #666; margin-bottom: 20px;'>中小型飆股 • 5分K極速對決</div>", unsafe_allow_html=True)
+        
+        # --- 警語區塊 (指定內容) ---
+        st.markdown("""
+        <div class='warning-text'>
+        ⚠️ 純粹好玩，大家聖誕節快樂！<br>
+        當沖賺得快，賠得也快，現實生活還是乖乖做波段吧。<br>
+        不小心熬夜開發，我要去補眠了 😴<br>
+        如果畫面突然重啟，代表我正在修改程式，請見諒。<br>
+        如果你喜歡，歡迎脆追蹤按起來 <a href="https://www.threads.net/@wowwow31001" target="_blank">wowwow31001</a>!<br>
+        但真正有料的是12/12日那篇XD
+        </div>
+        """, unsafe_allow_html=True)
         
         col_a, col_b, col_c = st.columns([1,2,1])
         with col_b:
             with st.form("login"):
                 name = st.text_input("輸入你的綽號", "少年股神")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
-                    st.session_state.nickname = name
-                    st.session_state.game_started = True
-                    reset_game()
-                    st.rerun()
+                    st.session_state.nickname = name; st.session_state.game_started = True; reset_game(); st.rerun()
         
-        # --- 管理員登入入口 (隱藏在首頁側邊欄最下方) ---
         with st.sidebar:
             st.markdown("---")
             with st.expander("🔐 管理員登入"):
                 pwd = st.text_input("密碼", type="password")
                 if st.button("登入後台"):
-                    if pwd == "8888": # 預設密碼
-                        st.session_state.is_admin = True
-                        st.rerun()
-                    else:
-                        st.error("密碼錯誤")
+                    if pwd == "8888": st.session_state.is_admin = True; st.rerun()
+                    else: st.error("密碼錯誤")
 
     else:
-        # 遊戲中
         df = st.session_state.data
         if df is None:
             st.error("資料載入失敗，請重試"); 
@@ -300,17 +287,13 @@ else:
 
         curr_idx = st.session_state.step
         if curr_idx >= len(df): st.session_state.auto_play = False; curr_idx = len(df)-1
-        
         curr_row = df.iloc[curr_idx]; curr_price = float(curr_row['Close'])
-        full_name = st.session_state.stock_name
-        masked_name = f"{full_name[0]}ＯＯ" if len(full_name) > 1 else full_name
-
+        full_name = st.session_state.stock_name; masked_name = f"{full_name[0]}ＯＯ" if len(full_name) > 1 else full_name
         pos = st.session_state.position; avg = st.session_state.avg_cost
         unrealized = (curr_price - avg) * pos if pos > 0 else (avg - curr_price) * abs(pos) if pos < 0 else 0
         est_total = st.session_state.balance + (pos * curr_price if pos > 0 else (abs(pos)*avg + unrealized if pos < 0 else 0))
         roi = ((est_total - 10000000) / 10000000) * 100
 
-        # --- 左側極致壓縮控制板 ---
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
             st.markdown(f"**標的: {masked_name}** (5分K)")
@@ -349,7 +332,6 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
         
-        # --- 主圖表區 ---
         display_start = max(0, curr_idx - 100)
         display_df = df.iloc[display_start : curr_idx+1]
         fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
