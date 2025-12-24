@@ -11,7 +11,7 @@ from datetime import datetime
 import math
 
 # --- 1. 全域設定 ---
-st.set_page_config(page_title="交易挑戰賽 - 斷頭停損版", layout="wide", page_icon="💀")
+st.set_page_config(page_title="交易挑戰賽 - 戰力積分版", layout="wide", page_icon="⚔️")
 
 # CSS 優化
 st.markdown("""
@@ -45,7 +45,6 @@ st.markdown("""
         text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 10px; border: 2px solid #c3e6cb;
     }
     
-    /* 斷頭警告樣式 */
     .margin-call-box {
         padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
         text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 20px; 
@@ -157,7 +156,6 @@ def load_data():
 
 def reset_game():
     if st.session_state.accumulate_mode:
-        # 如果上一局破產 (last_equity <= 0)，則強制重置為 1000 萬，不然遊戲無法進行
         if st.session_state.last_equity <= 0:
             st.session_state.balance = 10000000.0
             st.toast("👼 破產保護啟動！資金已重置為 1,000 萬", icon="🔄")
@@ -183,29 +181,47 @@ def execute_trade(action, price, qty, current_step_index):
         fee = price * qty * 0.002
         
         if action == "buy":
+            # ★★★ 修復：空單回補時的資金計算 ★★★
             if pos < 0:
-                cover_qty = min(abs(pos), qty); remaining_qty = qty - cover_qty
-                profit = (avg - price) * cover_qty; cost = price * cover_qty
+                cover_qty = min(abs(pos), qty)
+                remaining_qty = qty - cover_qty
+                
+                # 計算：
+                # 1. 退還本金 (放空時鎖住的保證金 = 平均成本 * 股數)
+                principal_returned = avg * cover_qty
+                # 2. 計算損益 (平均成本 - 現在價格) * 股數
+                profit = (avg - price) * cover_qty
+                
+                # 紀錄績效
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
                 
-                st.session_state.balance -= (cost + fee); st.session_state.balance += (cost + profit)
+                # 更新餘額：原餘額 + 退還本金 + 損益 - 手續費
+                st.session_state.balance += (principal_returned + profit - fee)
+                
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
+                
+                # 反手做多
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
-                        st.session_state.balance -= (cost_new + fee); st.session_state.position += remaining_qty
+                        st.session_state.balance -= (cost_new + fee)
+                        st.session_state.position += remaining_qty
                         st.session_state.avg_cost = price
                         st.session_state.history.append(f"🔴 反手做多 {remaining_qty}股 @ {price:.2f}")
+            
+            # 普通買進
             else:
                 cost = price * qty
                 if st.session_state.balance >= cost:
                     st.session_state.balance -= (cost + fee)
-                    total_cost = (avg * pos) + cost; new_pos_size = pos + qty
-                    st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position += qty
+                    total_cost = (avg * pos) + cost
+                    new_pos_size = pos + qty
+                    st.session_state.avg_cost = total_cost / new_pos_size
+                    st.session_state.position += qty
                     st.session_state.history.append(f"🔴 買進 {qty}股 @ {price:.2f}")
-                else: st.toast(f"❌ 資金不足！買 {qty} 股需要 {int(cost)}", icon="💸")
+                else: st.toast("❌ 資金不足", icon="💸")
 
         elif action == "sell":
             if pos > 0:
@@ -340,31 +356,23 @@ else:
         est_total = st.session_state.balance + (pos * curr_price if pos > 0 else (abs(pos)*avg + unrealized if pos < 0 else 0))
         roi = ((est_total - 10000000) / 10000000) * 100
 
-        # ★★★ 斷頭機制 (Game Over Logic) ★★★
+        # 斷頭機制
         if est_total <= 0:
             st.session_state.auto_play = False
             real_name = st.session_state.stock_name
             real_ticker = st.session_state.ticker
-            
-            # 強制結算並記錄 (資產歸0)
             save_score(st.session_state.nickname, real_ticker, real_name, 0, -100.0)
-            
-            # 顯示斷頭畫面
             st.markdown(f"""
             <div class='margin-call-box'>
                 💀 幫QQ！保證金維持率不足，已被強制斷頭出場！<br>
                 <span style='font-size: 18px; color: #555;'>總資產歸零 | 真相：{real_name} ({real_ticker})</span>
             </div>
             """, unsafe_allow_html=True)
-            
-            # 設定下一局破產狀態
             st.session_state.last_equity = 0 
-            
             if st.button("💸 破產重來 (資金重置)", type="primary", use_container_width=True):
                 reset_game()
                 st.rerun()
-            
-            st.stop() # 停止渲染後續內容
+            st.stop()
 
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
@@ -481,10 +489,8 @@ else:
         with tab3:
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.5**: 增加「斷頭停損機制」，虧損超過本金強制遊戲結束。
-            * **v4.4**: 增加「資金繼承模式」與「最大可買張數提示」。
-            * **v4.3**: 歡迎詞與標題更新。
-            * **v4.1**: 綜合戰力評分系統。
+            * **v4.6**: [Bug Fix] 修復空單回補時本金計算錯誤導致資產腰斬的重大問題。
+            * **v4.5**: 增加斷頭停損機制。
             """)
         
         if st.session_state.auto_play:
