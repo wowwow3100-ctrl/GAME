@@ -12,22 +12,29 @@ from datetime import datetime
 # --- 1. 全域設定 ---
 st.set_page_config(page_title="飆股當沖 - 妖股特訓班", layout="wide", page_icon="⚡")
 
-# CSS 優化：壓縮側邊欄 + 後台樣式
+# CSS 優化：保留緊湊間距，但恢復按鈕高度與文字清晰度
 st.markdown("""
 <style>
-    div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    /* 調整側邊欄區塊間距 */
+    div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.8rem; }
+    
+    /* 按鈕樣式 */
     section[data-testid="stSidebar"] .stButton>button {
-        width: 100%; border-radius: 6px; font-weight: bold; height: 40px;
+        width: 100%; border-radius: 6px; font-weight: bold; height: 45px;
     }
+    
+    /* 買賣按鈕顏色 */
     div[data-testid="stSidebar"] button:contains("買進") {
         background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important;
     }
     div[data-testid="stSidebar"] button:contains("賣出") {
         background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
     }
-    .price-text { font-size: 24px; font-weight: bold; color: #333; }
     
-    /* 警語樣式 */
+    /* 價格大字體 */
+    .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
+    
+    /* 警語樣式 (維持不變) */
     .warning-text {
         color: #ff9800;
         font-weight: bold;
@@ -36,10 +43,10 @@ st.markdown("""
         border-radius: 5px;
         margin-bottom: 20px;
         text-align: center;
-        background-color: #fff3e0; /* 淡橘色背景讓文字更跳 */
+        background-color: #fff3e0;
     }
     .warning-text a {
-        color: #E1306C; /* Threads 品牌色 */
+        color: #E1306C;
         text-decoration: none;
         border-bottom: 1px dashed #E1306C;
     }
@@ -82,7 +89,6 @@ for key, value in default_values.items():
 # --- 4. 後台與數據系統 ---
 
 def log_traffic():
-    """紀錄流量"""
     if 'traffic_logged' not in st.session_state:
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -93,7 +99,6 @@ def log_traffic():
         except: pass
 
 def get_admin_data():
-    """讀取後台數據"""
     data = {}
     if os.path.exists(FILES["traffic"]):
         df_t = pd.read_csv(FILES["traffic"])
@@ -207,47 +212,43 @@ def save_feedback(name, text):
 
 # --- 6. 程式進入點 ---
 
-# 紀錄流量
 log_traffic()
 
 if st.session_state.is_admin:
     # ====== 後台介面 ======
-    st.title("🔒 系統管理後台 (Admin Panel)")
-    if st.button("⬅️ 登出並返回遊戲"): st.session_state.is_admin = False; st.rerun()
+    st.title("🔒 系統管理後台")
+    if st.button("⬅️ 返回遊戲"): st.session_state.is_admin = False; st.rerun()
     
     admin_data = get_admin_data()
     k1, k2, k3 = st.columns(3)
-    k1.metric("👁️ 總瀏覽次數", len(admin_data['traffic']))
-    k2.metric("💬 意見回饋數", len(admin_data['feedback']) if isinstance(admin_data['feedback'], list) else pd.read_csv(FILES["feedback"]).shape[0] if os.path.exists(FILES["feedback"]) else 0)
-    k3.metric("🎮 總遊戲場數", len(admin_data['leaderboard']))
+    k1.metric("👁️ 總瀏覽", len(admin_data['traffic']))
+    k2.metric("💬 回饋數", len(admin_data['feedback']) if isinstance(admin_data['feedback'], list) else pd.read_csv(FILES["feedback"]).shape[0] if os.path.exists(FILES["feedback"]) else 0)
+    k3.metric("🎮 遊戲場數", len(admin_data['leaderboard']))
     st.divider()
 
     st.subheader("📈 流量趨勢")
     if not admin_data['traffic'].empty:
         df_t = admin_data['traffic']
         df_count = df_t.groupby(df_t['Time'].dt.date).size().reset_index(name='Visits')
-        fig = px.line(df_count, x='Time', y='Visits', title='每日訪問人次')
+        fig = px.line(df_count, x='Time', y='Visits', title='每日訪問')
         st.plotly_chart(fig, use_container_width=True)
-    else: st.info("尚無流量數據")
-
+    
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("💬 最新意見回饋")
+        st.subheader("💬 意見回饋")
         if os.path.exists(FILES["feedback"]):
             try: st.dataframe(pd.read_csv(FILES["feedback"]), use_container_width=True)
-            except: st.write("格式讀取錯誤")
-        else: st.info("尚無回饋")
+            except: st.write("格式錯誤")
     with c2:
-        st.subheader("🏆 完整英雄榜")
+        st.subheader("🏆 英雄榜")
         if not admin_data['leaderboard'].empty: st.dataframe(admin_data['leaderboard'].sort_index(ascending=False), use_container_width=True)
-        else: st.info("尚無紀錄")
 
 else:
     # ====== 正常遊戲介面 ======
     if not st.session_state.game_started:
         st.markdown("<h1 style='text-align: center;'>⚡ 飆股當沖 - 妖股特訓班</h1>", unsafe_allow_html=True)
         
-        # --- 警語區塊 (指定內容) ---
+        # --- 警語 (不變) ---
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
@@ -262,7 +263,7 @@ else:
         col_a, col_b, col_c = st.columns([1,2,1])
         with col_b:
             with st.form("login"):
-                name = st.text_input("輸入你的綽號", "在看盤室前大跳")
+                name = st.text_input("輸入你的綽號", "少年股神")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name; st.session_state.game_started = True; reset_game(); st.rerun()
         
@@ -270,9 +271,9 @@ else:
             st.markdown("---")
             with st.expander("🔐 管理員登入"):
                 pwd = st.text_input("密碼", type="password")
-                if st.button("登入後台"):
+                if st.button("登入"):
                     if pwd == "8888": st.session_state.is_admin = True; st.rerun()
-                    else: st.error("密碼錯誤")
+                    else: st.error("錯誤")
 
     else:
         df = st.session_state.data
@@ -294,16 +295,24 @@ else:
         est_total = st.session_state.balance + (pos * curr_price if pos > 0 else (abs(pos)*avg + unrealized if pos < 0 else 0))
         roi = ((est_total - 10000000) / 10000000) * 100
 
+        # --- 左側控制板 (文字恢復完整版) ---
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
-            st.markdown(f"**標的: {masked_name}** (5分K)")
+            st.markdown(f"**目前標的: {masked_name}** (5分K)")
+            
+            # 1. 資產區
             c1, c2 = st.columns(2)
-            c1.metric("權益", f"{int(est_total/10000)}萬", f"{roi:.2f}%")
-            c2.metric("未實現", f"{int(unrealized)}")
-            if pos != 0: st.info(f"{'多' if pos>0 else '空'} {abs(pos)} 股 | 均 {avg:.1f}")
-            else: st.caption("目前無庫存")
+            c1.metric("💰 總權益", f"{int(est_total/10000)}萬", f"{roi:.2f}%")
+            c2.metric("📉 未實現", f"{int(unrealized)}")
+            
+            if pos != 0:
+                st.info(f"倉位: {'多單' if pos>0 else '空單'} {abs(pos)} 股 | 均價 {avg:.1f}")
+            else:
+                st.caption("目前無庫存")
+            
             st.divider()
 
+            # 2. 下單區
             c_price, c_qty = st.columns([1, 1.5])
             c_price.markdown(f"<div class='price-text'>{curr_price:.1f}</div>", unsafe_allow_html=True)
             qty = c_qty.number_input("股數", 1000, 50000, 1000, step=1000, label_visibility="collapsed")
@@ -313,13 +322,17 @@ else:
             if s_col.button(f"賣出", use_container_width=True): execute_trade("sell", curr_price, qty, curr_idx); st.rerun()
 
             st.divider()
+            
+            # 3. 控制區
             c_play, c_next, c_slow = st.columns([2, 1, 1])
             if st.session_state.auto_play:
                 if c_play.button("⏸ 暫停", type="primary", use_container_width=True): st.session_state.auto_play = False; st.rerun()
             else:
                 if c_play.button("▶ 播放", use_container_width=True): st.session_state.auto_play = True; st.rerun()
+            
             if c_next.button("⏭", use_container_width=True):
                 if st.session_state.step < len(df)-1: st.session_state.step += 1; st.rerun()
+            
             if c_slow.button("🐢", help="減速(無效)", use_container_width=True): st.toast("無法減速！這就是人生！", icon="😈")
 
             st.divider()
@@ -327,40 +340,60 @@ else:
                 save_score(st.session_state.nickname, st.session_state.ticker, st.session_state.stock_name, est_total, f"{roi:.2f}%")
                 st.balloons(); time.sleep(0.5); reset_game(); st.rerun()
 
-            with st.popover("💬 回饋"):
+            with st.popover("💬 意見回饋"):
                 with st.form("fb"):
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
         
-        display_start = max(0, curr_idx - 100)
-        display_df = df.iloc[display_start : curr_idx+1]
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
-        fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA5'], line=dict(color='#FFD700', width=1), name='5MA'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA22'], line=dict(color='#9370DB', width=1), name='22MA'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA60'], line=dict(color='#2E8B57', width=1.5), name='60MA'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA240'], line=dict(color='#A9A9A9', width=2), name='240MA'), row=1, col=1)
-        
-        visible = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= curr_idx]
-        bx = [t['index'] for t in visible if t['type']=='buy']; by = [t['price']*0.99 for t in visible if t['type']=='buy']
-        sx = [t['index'] for t in visible if t['type']=='sell']; sy = [t['price']*1.01 for t in visible if t['type']=='sell']
-        if bx: fig.add_trace(go.Scatter(x=bx, y=by, mode='markers', name='買', marker=dict(symbol='triangle-up', size=12, color='red')), row=1, col=1)
-        if sx: fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', name='賣', marker=dict(symbol='triangle-down', size=12, color='green')), row=1, col=1)
-        
-        colors = ['#ef5350' if r['Open'] < r['Close'] else '#26a69a' for i, r in display_df.iterrows()]
-        fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=colors, name="量"), row=2, col=1)
-        
-        hist_c = ['#ef5350' if v > 0 else '#26a69a' for v in display_df['MACD_Hist']]
-        fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['MACD_Hist'], marker_color=hist_c, name="MACD"), row=3, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
-        
-        fig.update_layout(height=800, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, title=dict(text=f"{masked_name} - {curr_price}", x=0.05, y=0.98), xaxis_rangeslider_visible=False)
-        fig.update_xaxes(showticklabels=False, row=1, col=1); fig.update_xaxes(showticklabels=False, row=2, col=1)
-        st.plotly_chart(fig, use_container_width=True)
-        
-        with st.expander("📝 交易紀錄 (倒序)"):
-            for log in reversed(st.session_state.history[-10:]): st.caption(log)
+        # --- 主畫面區 (使用 Tabs 分頁) ---
+        tab1, tab2, tab3 = st.tabs(["📊 操盤室", "🏆 英雄榜", "📜 版本日誌"])
+
+        with tab1:
+            display_start = max(0, curr_idx - 100)
+            display_df = df.iloc[display_start : curr_idx+1]
+            fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
+            fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA5'], line=dict(color='#FFD700', width=1), name='5MA'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA22'], line=dict(color='#9370DB', width=1), name='22MA'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA60'], line=dict(color='#2E8B57', width=1.5), name='60MA'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA240'], line=dict(color='#A9A9A9', width=2), name='240MA'), row=1, col=1)
+            
+            visible = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= curr_idx]
+            bx = [t['index'] for t in visible if t['type']=='buy']; by = [t['price']*0.99 for t in visible if t['type']=='buy']
+            sx = [t['index'] for t in visible if t['type']=='sell']; sy = [t['price']*1.01 for t in visible if t['type']=='sell']
+            if bx: fig.add_trace(go.Scatter(x=bx, y=by, mode='markers', name='買', marker=dict(symbol='triangle-up', size=12, color='red')), row=1, col=1)
+            if sx: fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', name='賣', marker=dict(symbol='triangle-down', size=12, color='green')), row=1, col=1)
+            
+            colors = ['#ef5350' if r['Open'] < r['Close'] else '#26a69a' for i, r in display_df.iterrows()]
+            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=colors, name="量"), row=2, col=1)
+            
+            hist_c = ['#ef5350' if v > 0 else '#26a69a' for v in display_df['MACD_Hist']]
+            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['MACD_Hist'], marker_color=hist_c, name="MACD"), row=3, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
+            
+            fig.update_layout(height=800, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, title=dict(text=f"{masked_name} - {curr_price}", x=0.05, y=0.98), xaxis_rangeslider_visible=False)
+            fig.update_xaxes(showticklabels=False, row=1, col=1); fig.update_xaxes(showticklabels=False, row=2, col=1)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("📝 交易紀錄 (倒序)"):
+                for log in reversed(st.session_state.history[-10:]): st.caption(log)
+
+        with tab2:
+            st.markdown("### 🏆 英雄榜")
+            if os.path.exists(FILES["leaderboard"]):
+                try: st.dataframe(pd.read_csv(FILES["leaderboard"]).sort_index(ascending=False), use_container_width=True)
+                except: st.write("無紀錄")
+            else: st.info("尚無紀錄")
+
+        with tab3:
+            st.markdown("### 📜 版本日誌")
+            st.markdown("""
+            * **v3.6**: 恢復K線上方分頁 (操盤室/英雄榜)，側邊欄文字標示完整化。
+            * **v3.5**: 新增後台管理系統、流量統計。
+            * **v3.3**: 鎖定中小型妖股 (IP/重電/散熱)，剔除牛皮股。
+            * **v3.1**: 初始資金 1000 萬，新增防呆機制。
+            """)
         
         if st.session_state.auto_play:
             time.sleep(0.5); st.session_state.step += 1; st.rerun()
