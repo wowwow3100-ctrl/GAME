@@ -6,18 +6,31 @@ import pandas as pd
 import random
 import time
 import os
-import numpy as np
 
-# --- 1. 頁面與全域設定 ---
-st.set_page_config(page_title="當沖模擬戰 - 專業版", layout="wide", page_icon="💹")
+# --- 1. 全域設定 ---
+st.set_page_config(page_title="當沖模擬戰 - 操盤手版", layout="wide", page_icon="📉")
 
-# 自定義 CSS
+# CSS 優化：讓右側控制面板更緊湊，按鈕更好按
 st.markdown("""
 <style>
-    [data-testid="stMetricValue"] { font-size: 24px; }
-    .stButton>button { font-weight: bold; border-radius: 8px; }
-    /* 調整 Tab 字體 */
-    button[data-baseweb="tab"] { font-size: 18px; font-weight: bold; }
+    .stButton>button {
+        width: 100%;
+        height: 60px;
+        font-size: 20px;
+        font-weight: bold;
+        border-radius: 12px;
+    }
+    /* 紅綠按鈕顏色 */
+    div[data-testid="column"] button:contains("買進") {
+        border: 2px solid #ff4b4b;
+        color: #ff4b4b;
+    }
+    div[data-testid="column"] button:contains("賣出") {
+        border: 2px solid #00c853;
+        color: #00c853;
+    }
+    /* 指標字體 */
+    [data-testid="stMetricValue"] { font-size: 22px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -26,132 +39,149 @@ FILES = {"leaderboard": "leaderboard.csv", "feedback": "feedback.csv"}
 # --- 2. 初始化 Session State ---
 default_values = {
     'balance': 100000.0,
-    'position': 0,
+    'position': 0,      # 正數=多單，負數=空單
     'avg_cost': 0.0,
     'step': 200,
-    'history': [],      # 文字紀錄
-    'trades_visual': [], # 視覺化紀錄 (用於在圖上畫箭頭)
+    'history': [],
+    'trades_visual': [],
     'data': None,
     'ticker': "",
     'nickname': "",
     'game_started': False,
-    'auto_play': False,
-    'speed': 1.0
+    'auto_play': False
 }
 
 for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. 技術指標計算函數 ---
+# --- 3. 核心邏輯 (含放空運算) ---
 
 def calculate_technical_indicators(df):
-    # 1. 均線
     df['MA200'] = df['Close'].rolling(window=200).mean()
     df['MA60'] = df['Close'].rolling(window=60).mean()
-    
-    # 2. KD 指標 (9, 3, 3)
-    # RSV = (Close - MinLow) / (MaxHigh - MinLow) * 100
-    low_min = df['Low'].rolling(window=9).min()
-    high_max = df['High'].rolling(window=9).max()
-    df['RSV'] = (df['Close'] - low_min) / (high_max - low_min) * 100
-    # K值與D值 (使用簡單遞迴計算平滑)
-    df['K'] = df['RSV'].ewm(com=2).mean() # com=2 等同於 alpha=1/3
-    df['D'] = df['K'].ewm(com=2).mean()
-    
-    # 3. MACD (12, 26, 9)
+    # MACD
     exp1 = df['Close'].ewm(span=12, adjust=False).mean()
     exp2 = df['Close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = exp1 - exp2
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
     df['MACD_Hist'] = df['MACD'] - df['Signal']
-    
+    # KD
+    low_min = df['Low'].rolling(window=9).min()
+    high_max = df['High'].rolling(window=9).max()
+    df['RSV'] = (df['Close'] - low_min) / (high_max - low_min) * 100
+    df['K'] = df['RSV'].ewm(com=2).mean()
+    df['D'] = df['K'].ewm(com=2).mean()
     return df
 
 def load_data():
-    tickers = ['NVDA', 'TSLA', 'AMD', 'TQQQ', 'SOXL', 'MSTR', 'COIN', 'AAPL']
+    tickers = ['NVDA', 'TSLA', 'AMD', 'TQQQ', 'SOXL', 'MSTR', 'COIN', 'NFLX']
     selected_ticker = random.choice(tickers)
-    
     try:
-        # 下載資料
         df = yf.download(selected_ticker, period="1mo", interval="5m", progress=False)
-        
-        # 格式整理
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if len(df) < 300: return None, None
-
-        # 計算指標
         df = calculate_technical_indicators(df)
-        
-        # 匿名化處理：我們不使用真實日期當 Index，改用流水號
         df.reset_index(inplace=True)
-        df['Bar_Index'] = range(len(df)) # 建立流水號 0, 1, 2...
-        
-        # 隨機切入點
+        df['Bar_Index'] = range(len(df))
         max_start = len(df) - 150
-        start_idx = random.randint(200, max_start) if max_start > 200 else 200
-        st.session_state.step = start_idx
+        st.session_state.step = random.randint(200, max_start) if max_start > 200 else 200
         return selected_ticker, df
-        
-    except Exception as e:
-        return None, None
+    except: return None, None
 
 def reset_game():
     st.session_state.balance = 100000.0
     st.session_state.position = 0
     st.session_state.avg_cost = 0.0
     st.session_state.history = []
-    st.session_state.trades_visual = [] # 重置圖表標記
+    st.session_state.trades_visual = []
     st.session_state.auto_play = False
     st.session_state.ticker, st.session_state.data = load_data()
 
-def trade(action, price, qty, current_step_index):
+# ★★★ 雙向交易核心邏輯 ★★★
+def execute_trade(action, price, qty, current_step_index):
     price = float(price)
-    if action == "buy":
+    pos = st.session_state.position
+    avg = st.session_state.avg_cost
+    
+    # 定義交易方向：1 為買進 (做多/補空), -1 為賣出 (賣出/放空)
+    direction = 1 if action == "buy" else -1
+    trade_qty = qty * direction 
+
+    # 1. 計算手續費 (假設 0.1%)
+    fee = price * qty * 0.001
+    
+    # 2. 判斷交易類型
+    # A. 加碼 (方向相同)：多單買進 OR 空單賣出
+    if (pos >= 0 and action == "buy") or (pos <= 0 and action == "sell"):
         cost = price * qty
         if st.session_state.balance >= cost:
-            st.session_state.balance -= cost
-            total_cost = (st.session_state.avg_cost * st.session_state.position) + cost
-            st.session_state.position += qty
-            st.session_state.avg_cost = total_cost / st.session_state.position
-            st.session_state.history.append(f"🔴 買入 {qty} 股 @ {price:.2f}")
+            st.session_state.balance -= (cost + fee)
+            # 更新平均成本 (加權平均)
+            total_cost = (avg * abs(pos)) + cost
+            new_pos_size = abs(pos) + qty
+            st.session_state.avg_cost = total_cost / new_pos_size
+            st.session_state.position += trade_qty
             
-            # 紀錄視覺化座標
-            st.session_state.trades_visual.append({
-                'index': current_step_index,
-                'price': price,
-                'type': 'buy'
-            })
+            # 紀錄
+            tag = "🔴 加碼做多" if action == "buy" else "🟢 加碼放空"
+            st.session_state.history.append(f"{tag} {qty}股 @ {price:.2f}")
         else:
-            st.toast("❌ 資金不足！")
-            
-    elif action == "sell":
-        if st.session_state.position >= qty:
-            revenue = price * qty
-            profit = (price - st.session_state.avg_cost) * qty
-            st.session_state.balance += revenue
-            st.session_state.position -= qty
-            if st.session_state.position == 0: st.session_state.avg_cost = 0.0
-            
-            icon = "💰" if profit > 0 else "💸"
-            st.session_state.history.append(f"🟢 賣出 {qty} 股 @ {price:.2f} (損益: {profit:.2f}) {icon}")
-            
-            # 紀錄視覺化座標
-            st.session_state.trades_visual.append({
-                'index': current_step_index,
-                'price': price,
-                'type': 'sell'
-            })
-        else:
-            st.toast("❌ 持倉不足！")
+            st.toast("❌ 資金不足以加碼")
+            return
+
+    # B. 減碼/平倉/反手 (方向相反)
+    else:
+        # 這次交易能平掉多少倉位？
+        cover_qty = min(abs(pos), qty)
+        remaining_qty = qty - cover_qty # 如果還有剩，就是要反手建立新倉
+        
+        # --- 第一步：先平倉 ---
+        # 計算損益
+        if pos > 0: # 原本多單，現在賣出
+            profit = (price - avg) * cover_qty
+            revenue = price * cover_qty
+            st.session_state.balance += (revenue - fee)
+            tag_close = "🟢 獲利賣出" if profit > 0 else "🟢 停損賣出"
+        else: # 原本空單，現在買進
+            profit = (avg - price) * cover_qty # 空單獲利 = 賣價(高) - 買價(低)
+            cost = price * cover_qty
+            st.session_state.balance -= (cost + fee)
+            # 空單平倉時，保證金/本金返還邏輯簡化：直接把損益加回餘額
+            # (這裡做簡單處理：餘額已在開倉時扣除，平倉只加回損益部分+本金變動)
+            # 更正：開倉時已扣全額現金，平倉時補回 (成本+損益)
+            st.session_state.balance += (cost + profit) 
+            tag_close = "🔴 空單回補" if profit > 0 else "🔴 空單停損"
+
+        st.session_state.position += (cover_qty * direction) # 修正倉位
+        
+        icon = "💰" if profit > 0 else "💸"
+        st.session_state.history.append(f"{tag_close} {cover_qty}股 (損益: {profit:.1f}) {icon}")
+
+        # --- 第二步：如果有剩餘股數，建立新倉 (反手) ---
+        if remaining_qty > 0:
+            cost = price * remaining_qty
+            if st.session_state.balance >= cost:
+                st.session_state.balance -= (cost + fee)
+                st.session_state.position += (remaining_qty * direction)
+                st.session_state.avg_cost = price # 新倉成本即為當前價
+                
+                tag_new = "🔴 反手做多" if action == "buy" else "🟢 反手放空"
+                st.session_state.history.append(f"{tag_new} {remaining_qty}股 @ {price:.2f}")
+            else:
+                st.toast(f"⚠️ 資金不足以建立反手新倉 (已平倉 {cover_qty} 股)")
+
+    # 視覺化標記
+    marker_type = 'buy' if action == 'buy' else 'sell'
+    st.session_state.trades_visual.append({'index': current_step_index, 'price': price, 'type': marker_type})
+
 
 def save_score(player, ticker, assets, roi):
     new_entry = pd.DataFrame([{
         "日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player,
         "股票": ticker, "最終資產": round(assets, 2), "報酬率": f"{roi:.2f}%"
     }])
+    # 使用 mode='a' (append) 確保不覆蓋舊資料
     header = not os.path.exists(FILES["leaderboard"])
     new_entry.to_csv(FILES["leaderboard"], mode='a', header=header, index=False)
 
@@ -159,172 +189,145 @@ def save_feedback(name, text):
     with open(FILES["feedback"], "a", encoding="utf-8") as f:
         f.write(f"[{time.strftime('%Y-%m-%d')}] {name}: {text}\n")
 
-# --- 4. 主程式介面 ---
+# --- 4. 介面呈現 ---
 
-# 側邊欄：功能選單與意見回饋
 with st.sidebar:
-    st.header("⚙️ 設定與回饋")
-    st.write("這是一個隨機抽選歷史數據的練習場，時間已隱藏，請專注於 K 線型態。")
-    
-    with st.expander("📝 意見回饋 (Feedback)"):
-        with st.form("feedback_form"):
-            fb_text = st.text_area("有什麼建議或發現Bug嗎？")
-            if st.form_submit_button("送出"):
-                save_feedback(st.session_state.nickname or "匿名", fb_text)
-                st.success("收到！感謝你的建議。")
+    st.header("⚙️ 設定")
+    with st.popover("💬 意見回饋"):
+        with st.form("fb"):
+            txt = st.text_area("內容", height=100)
+            if st.form_submit_button("送出"): 
+                save_feedback(st.session_state.nickname, txt)
+                st.toast("已送出")
 
-# 分頁設計
-tab1, tab2 = st.tabs(["🎮 當沖操盤室", "🏆 英雄榜"])
+# 分頁
+tab1, tab2 = st.tabs(["🎮 操盤室", "🏆 英雄榜"])
 
 with tab1:
-    # 歡迎語
     if not st.session_state.game_started:
-        st.markdown("""
-        <div style="text-align: center; padding: 50px;">
-            <h1>🎢 體驗當沖的魅力，純粹好玩</h1>
-            <p style="font-size: 20px;">隨機抽選美股熱門標的 • 隱藏時間軸 • 挑戰你的盤感</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            name_input = st.text_input("請輸入你的稱號", "當沖少年股神")
-            if st.button("🔥 開始挑戰", use_container_width=True):
-                st.session_state.nickname = name_input
+        st.markdown("<h1 style='text-align: center;'>📉 當沖模擬戰：多空雙巴</h1>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            name = st.text_input("輸入你的綽號", "空軍總司令")
+            if st.button("🔥 開始當沖", use_container_width=True):
+                st.session_state.nickname = name
                 st.session_state.game_started = True
                 reset_game()
                 st.rerun()
-
     else:
-        # --- 遊戲進行中 ---
         df = st.session_state.data
         if df is None:
-            st.error("資料載入失敗，請重試")
+            st.error("資料錯誤，請重開")
             if st.button("重開"): reset_game(); st.rerun()
             st.stop()
 
-        current_idx = st.session_state.step
-        # 顯示範圍：過去 60 根
-        display_start = max(0, current_idx - 60)
-        display_df = df.iloc[display_start : current_idx+1]
+        # 數據準備
+        curr_idx = st.session_state.step
+        display_start = max(0, curr_idx - 80) # 看更長一點
+        display_df = df.iloc[display_start : curr_idx+1]
         
-        # 取得最新價格
         try:
-            current_price = float(display_df.iloc[-1]['Close'])
-        except:
-            current_price = 0.0
+            curr_price = float(display_df.iloc[-1]['Close'])
+        except: curr_price = 0.0
 
-        # --- A. 頂部資訊看板 ---
-        market_val = st.session_state.position * current_price
-        total_assets = st.session_state.balance + market_val
-        unrealized = (current_price - st.session_state.avg_cost) * st.session_state.position if st.session_state.position > 0 else 0
+        # 計算損益與狀態
+        pos = st.session_state.position
+        avg = st.session_state.avg_cost
+        
+        # 未實現損益計算 (區分多空)
+        if pos > 0: # 多單
+            unrealized = (curr_price - avg) * pos
+            pos_label = f"🔴 多單 {pos} 股"
+        elif pos < 0: # 空單
+            unrealized = (avg - curr_price) * abs(pos)
+            pos_label = f"🟢 空單 {abs(pos)} 股"
+        else:
+            unrealized = 0
+            pos_label = "無庫存"
+
+        market_val = abs(pos) * curr_price
+        total_assets = st.session_state.balance + unrealized # 簡易估算：現金+未實現
         roi = ((total_assets - 100000) / 100000) * 100
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("💰 現金", f"${int(st.session_state.balance):,}")
-        m2.metric("📦 庫存", f"{st.session_state.position} 股", f"${int(market_val):,}")
-        m3.metric("📊 損益", f"${unrealized:,.0f}", delta_color="normal")
-        m4.metric("🚀 總資產", f"${int(total_assets):,}", f"{roi:.2f}%")
+        # --- 介面佈局：左右分割 ---
+        # 左邊是圖表 (75%)，右邊是操作盤 (25%)
+        col_chart, col_ctrl = st.columns([3, 1])
 
-        # --- B. 專業 K 線圖 (含指標與買賣點) ---
-        
-        # 建立三個子圖：K線(含標記)、成交量、MACD/KD
-        fig = make_subplots(
-            rows=3, cols=1, 
-            shared_xaxes=True, 
-            vertical_spacing=0.03, 
-            row_heights=[0.6, 0.2, 0.2],
-            specs=[[{"secondary_y": False}], [{"secondary_y": False}], [{"secondary_y": False}]]
-        )
-
-        # 1. 主圖：K線 (台灣紅漲綠跌習慣)
-        fig.add_trace(go.Candlestick(
-            x=display_df['Bar_Index'],
-            open=display_df['Open'], high=display_df['High'],
-            low=display_df['Low'], close=display_df['Close'],
-            name="K線",
-            increasing_line_color='red', decreasing_line_color='green'
-        ), row=1, col=1)
-
-        # 主圖：均線
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA200'], line=dict(color='blue', width=2), name='200MA'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA60'], line=dict(color='orange', width=1), name='60MA'), row=1, col=1)
-
-        # ★★★ 主圖：買賣點標記 (重點功能) ★★★
-        # 過濾出「在當前顯示範圍內」的交易紀錄
-        visible_trades = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= current_idx]
-        
-        buy_x = [t['index'] for t in visible_trades if t['type'] == 'buy']
-        buy_y = [t['price'] * 0.999 for t in visible_trades if t['type'] == 'buy'] # 畫在K棒下方一點點
-        
-        sell_x = [t['index'] for t in visible_trades if t['type'] == 'sell']
-        sell_y = [t['price'] * 1.001 for t in visible_trades if t['type'] == 'sell'] # 畫在K棒上方一點點
-
-        if buy_x:
-            fig.add_trace(go.Scatter(
-                x=buy_x, y=buy_y, mode='markers', name='買進點',
-                marker=dict(symbol='triangle-up', size=12, color='darkred')
+        with col_chart:
+            # 畫圖
+            fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, 
+                              row_heights=[0.6, 0.2, 0.2], specs=[[{}],[{}],[{}]])
+            
+            # K線
+            fig.add_trace(go.Candlestick(
+                x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'],
+                low=display_df['Low'], close=display_df['Close'], name="K線",
+                increasing_line_color='red', decreasing_line_color='green'
             ), row=1, col=1)
             
-        if sell_x:
-            fig.add_trace(go.Scatter(
-                x=sell_x, y=sell_y, mode='markers', name='賣出點',
-                marker=dict(symbol='triangle-down', size=12, color='darkgreen')
-            ), row=1, col=1)
+            # 均線
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA200'], line=dict(color='blue', width=2), name='200MA'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA60'], line=dict(color='orange', width=1), name='60MA'), row=1, col=1)
 
-        # 2. 副圖1：成交量
-        colors = ['red' if row['Open'] < row['Close'] else 'green' for index, row in display_df.iterrows()]
-        fig.add_trace(go.Bar(
-            x=display_df['Bar_Index'], y=display_df['Volume'],
-            name="Volume", marker_color=colors
-        ), row=2, col=1)
+            # 交易標記
+            visible = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= curr_idx]
+            bx = [t['index'] for t in visible if t['type']=='buy']
+            by = [t['price']*0.998 for t in visible if t['type']=='buy']
+            sx = [t['index'] for t in visible if t['type']=='sell']
+            sy = [t['price']*1.002 for t in visible if t['type']=='sell']
+            
+            if bx: fig.add_trace(go.Scatter(x=bx, y=by, mode='markers', name='買/補', marker=dict(symbol='triangle-up', size=14, color='darkred')), row=1, col=1)
+            if sx: fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', name='賣/空', marker=dict(symbol='triangle-down', size=14, color='darkgreen')), row=1, col=1)
 
-        # 3. 副圖2：MACD (預設) 或 KD
-        # 這裡同時畫，但你可以透過圖例開關
-        # MACD 柱狀
-        hist_colors = ['red' if v > 0 else 'green' for v in display_df['MACD_Hist']]
-        fig.add_trace(go.Bar(
-            x=display_df['Bar_Index'], y=display_df['MACD_Hist'],
-            name="MACD柱", marker_color=hist_colors
-        ), row=3, col=1)
-        fig.add_trace(go.Scatter(
-            x=display_df['Bar_Index'], y=display_df['MACD'],
-            line=dict(color='gold', width=1), name="DIF"
-        ), row=3, col=1)
-        fig.add_trace(go.Scatter(
-            x=display_df['Bar_Index'], y=display_df['Signal'],
-            line=dict(color='blue', width=1), name="DEM"
-        ), row=3, col=1)
+            # 副圖
+            colors = ['red' if r['Open'] < r['Close'] else 'green' for i, r in display_df.iterrows()]
+            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=colors, name="Vol"), row=2, col=1)
+            
+            hist_c = ['red' if v > 0 else 'green' for v in display_df['MACD_Hist']]
+            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['MACD_Hist'], marker_color=hist_c, name="MACD"), row=3, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='gold', width=1)), row=3, col=1)
+            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='blue', width=1)), row=3, col=1)
 
-        # 版面設定
-        fig.update_layout(
-            title=f"標的: {st.session_state.ticker} (隱藏時間) - Price: {current_price:.2f}",
-            height=700, # 加高圖表
-            xaxis_rangeslider_visible=False,
-            xaxis3_title="K棒編號 (Bar Index)", # X軸標籤
-            margin=dict(l=10, r=10, t=30, b=10),
-            showlegend=True
-        )
-        # 隱藏上方子圖的 X 軸標籤，只顯示最下面的
-        fig.update_xaxes(showticklabels=False, row=1, col=1)
-        fig.update_xaxes(showticklabels=False, row=2, col=1)
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        # --- C. 操作區 ---
-        col_trade, col_ctrl, col_sys = st.columns([1.2, 1, 1])
-
-        with col_trade:
-            st.subheader("⚡ 下單")
-            qty = st.number_input("股數", 10, 5000, 10, step=10, key="qty_input")
-            b, s = st.columns(2)
-            if b.button("🔴 買進", use_container_width=True):
-                trade("buy", current_price, qty, current_idx)
-            if s.button("🟢 賣出", use_container_width=True):
-                trade("sell", current_price, qty, current_idx)
+            fig.update_layout(height=800, margin=dict(l=10, r=10, t=30, b=10), showlegend=False, 
+                            title=f"{st.session_state.ticker} (Bar: {curr_idx}) Price: {curr_price:.2f}")
+            fig.update_xaxes(showticklabels=False, row=1, col=1)
+            fig.update_xaxes(showticklabels=False, row=2, col=1)
+            st.plotly_chart(fig, use_container_width=True)
 
         with col_ctrl:
-            st.subheader("⏩ 時間")
+            # 右側控制面板
+            st.markdown("### 💼 資產看板")
+            st.metric("總資產 (含未實現)", f"${int(total_assets):,}", f"{roi:.2f}%")
+            st.metric("現金餘額", f"${int(st.session_state.balance):,}")
+            st.divider()
+            
+            st.markdown("### 📦 庫存狀態")
+            st.info(pos_label) # 顯示 "多單 10 股" 或 "空單 5 股"
+            st.metric("平均成本", f"${avg:.2f}")
+            st.metric("未實現損益", f"${int(unrealized):,}", delta_color="normal")
+            st.divider()
+
+            st.markdown("### ⚡ 下單操作")
+            st.write(f"當前價: **{curr_price:.2f}**")
+            qty = st.number_input("股數", 10, 5000, 10, step=10)
+            
+            c1, c2 = st.columns(2)
+            # 按鈕邏輯
+            # 如果是空單，買進顯示 "回補"；如果是多單或無，買進顯示 "買進"
+            buy_label = "🔴 回補/買進" if pos < 0 else "🔴 買進"
+            sell_label = "🟢 賣出/放空" if pos <= 0 else "🟢 賣出"
+
+            if c1.button(buy_label, use_container_width=True):
+                execute_trade("buy", curr_price, qty, curr_idx)
+                st.rerun()
+            
+            if c2.button(sell_label, use_container_width=True):
+                execute_trade("sell", curr_price, qty, curr_idx)
+                st.rerun()
+
+            st.divider()
+            st.markdown("### ⏩ 盤勢控制")
+            
             if st.session_state.auto_play:
                 if st.button("⏸️ 暫停", type="primary", use_container_width=True):
                     st.session_state.auto_play = False
@@ -333,36 +336,37 @@ with tab1:
                 if st.button("▶️ 自動播放", use_container_width=True):
                     st.session_state.auto_play = True
                     st.rerun()
-            
-            if st.button("⏭️ 下一步", disabled=st.session_state.auto_play, use_container_width=True):
-                if st.session_state.step < len(df) - 1:
-                    st.session_state.step += 1
-                    st.rerun()
+                if st.button("⏭️ 下一根", use_container_width=True):
+                    if st.session_state.step < len(df) - 1:
+                        st.session_state.step += 1
+                        st.rerun()
 
-        with col_sys:
-            st.subheader("🏁 系統")
-            if st.button("結算 / 下一局", use_container_width=True):
+            st.divider()
+            if st.button("🏁 結算/下一局", use_container_width=True):
                 save_score(st.session_state.nickname, st.session_state.ticker, total_assets, roi)
-                st.toast("成績已保存！")
+                st.success("✅ 成績已保存！")
                 time.sleep(1)
                 reset_game()
                 st.rerun()
+            
+            # 交易紀錄 (顯示最近5筆)
+            with st.expander("📜 最近交易", expanded=True):
+                for log in reversed(st.session_state.history[-5:]):
+                    st.caption(log)
 
-        # 自動播放邏輯
-        if st.session_state.auto_play:
-            if st.session_state.step < len(df) - 1:
-                time.sleep(0.3) # 速度
-                st.session_state.step += 1
-                st.rerun()
-            else:
-                st.session_state.auto_play = False
-                st.success("本局結束")
+            # 自動播放邏輯
+            if st.session_state.auto_play:
+                if st.session_state.step < len(df) - 1:
+                    time.sleep(0.5)
+                    st.session_state.step += 1
+                    st.rerun()
+                else:
+                    st.session_state.auto_play = False
 
 with tab2:
-    st.title("🏆 當沖英雄榜")
+    st.title("🏆 華爾街英雄榜")
     if os.path.exists(FILES["leaderboard"]):
         lb = pd.read_csv(FILES["leaderboard"])
-        # 簡易美化表格
         st.dataframe(lb.sort_index(ascending=False), use_container_width=True)
     else:
-        st.info("尚無紀錄")
+        st.info("目前還沒有紀錄，快去創造傳奇！")
