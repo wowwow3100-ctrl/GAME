@@ -11,7 +11,8 @@ from datetime import datetime
 import math
 
 # --- 1. 全域設定 ---
-st.set_page_config(page_title="交易挑戰賽 - 戰力積分版", layout="wide", page_icon="⚔️")
+# [修改] 標題簡化為 "交易挑戰賽"
+st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
 # CSS 優化
 st.markdown("""
@@ -181,18 +182,17 @@ def execute_trade(action, price, qty, current_step_index):
         fee = price * qty * 0.002
         
         if action == "buy":
-            # ★★★ 修復：空單回補時的資金計算 ★★★
+            # 空單回補
             if pos < 0:
                 cover_qty = min(abs(pos), qty)
                 remaining_qty = qty - cover_qty
                 
                 # 計算：
-                # 1. 退還本金 (放空時鎖住的保證金 = 平均成本 * 股數)
+                # 1. 退還本金 (保證金)
                 principal_returned = avg * cover_qty
-                # 2. 計算損益 (平均成本 - 現在價格) * 股數
+                # 2. 計算損益
                 profit = (avg - price) * cover_qty
                 
-                # 紀錄績效
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
                 
@@ -489,8 +489,8 @@ else:
         with tab3:
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.6**: [Bug Fix] 修復空單回補時本金計算錯誤導致資產腰斬的重大問題。
-            * **v4.5**: 增加斷頭停損機制。
+            * **v4.7**: [UI] 瀏覽器標題與歡迎詞更新。
+            * **v4.6**: [Bug Fix] 修復空單回補本金計算。
             """)
         
         if st.session_state.auto_play:
