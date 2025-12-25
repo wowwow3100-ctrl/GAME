@@ -11,7 +11,7 @@ from datetime import datetime
 import math
 
 # --- 1. 全域設定 ---
-# [修改] 標題簡化為 "交易挑戰賽"
+# 這行必須放在所有 st. 指令的最前面！！！
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
 # CSS 優化
