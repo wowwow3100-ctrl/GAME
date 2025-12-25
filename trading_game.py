@@ -11,22 +11,50 @@ from datetime import datetime
 import math
 
 # --- 1. 全域設定 ---
-# 這行必須放在所有 st. 指令的最前面！！！
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
-# CSS 優化
+# CSS 優化：針對手機介面優化按鈕大小
 st.markdown("""
 <style>
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    
+    /* 加大側邊欄按鈕，方便手機點擊 */
     section[data-testid="stSidebar"] .stButton>button {
-        width: 100%; border-radius: 6px; font-weight: bold; height: 45px;
+        width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px;
     }
+    
+    /* 買賣按鈕顏色 */
     div[data-testid="stSidebar"] button:contains("買進") {
         background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important;
     }
     div[data-testid="stSidebar"] button:contains("賣出") {
         background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
     }
+    
+    /* 導航列優化：讓 Radio Button 看起來像分頁按鈕 */
+    div[role="radiogroup"] {
+        display: flex;
+        flex-direction: row;
+        justify-content: center;
+        width: 100%;
+    }
+    div[role="radiogroup"] label {
+        flex: 1;
+        text-align: center;
+        background-color: #f0f2f6;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin: 0 2px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    div[role="radiogroup"] label[data-checked="true"] {
+        background-color: #ff4b4b;
+        color: white;
+        border-color: #ff4b4b;
+    }
+
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
     
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
@@ -182,44 +210,28 @@ def execute_trade(action, price, qty, current_step_index):
         fee = price * qty * 0.002
         
         if action == "buy":
-            # 空單回補
             if pos < 0:
-                cover_qty = min(abs(pos), qty)
-                remaining_qty = qty - cover_qty
-                
-                # 計算：
-                # 1. 退還本金 (保證金)
+                cover_qty = min(abs(pos), qty); remaining_qty = qty - cover_qty
                 principal_returned = avg * cover_qty
-                # 2. 計算損益
                 profit = (avg - price) * cover_qty
-                
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
                 
-                # 更新餘額：原餘額 + 退還本金 + 損益 - 手續費
                 st.session_state.balance += (principal_returned + profit - fee)
-                
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
-                
-                # 反手做多
                 if remaining_qty > 0:
                     cost_new = price * remaining_qty
                     if st.session_state.balance >= cost_new:
-                        st.session_state.balance -= (cost_new + fee)
-                        st.session_state.position += remaining_qty
+                        st.session_state.balance -= (cost_new + fee); st.session_state.position += remaining_qty
                         st.session_state.avg_cost = price
                         st.session_state.history.append(f"🔴 反手做多 {remaining_qty}股 @ {price:.2f}")
-            
-            # 普通買進
             else:
                 cost = price * qty
                 if st.session_state.balance >= cost:
                     st.session_state.balance -= (cost + fee)
-                    total_cost = (avg * pos) + cost
-                    new_pos_size = pos + qty
-                    st.session_state.avg_cost = total_cost / new_pos_size
-                    st.session_state.position += qty
+                    total_cost = (avg * pos) + cost; new_pos_size = pos + qty
+                    st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position += qty
                     st.session_state.history.append(f"🔴 買進 {qty}股 @ {price:.2f}")
                 else: st.toast("❌ 資金不足", icon="💸")
 
@@ -439,9 +451,11 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
         
-        tab1, tab2, tab3 = st.tabs(["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"])
+        # ★★★ 關鍵修改：使用 st.radio 替代 st.tabs ★★★
+        st.markdown("---")
+        view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
 
-        with tab1:
+        if view_mode == "📊 操盤室":
             display_start = max(0, curr_idx - 100)
             display_df = df.iloc[display_start : curr_idx+1]
             chart_title = f"{masked_name} - {curr_price}"
@@ -473,8 +487,8 @@ else:
             with st.expander("📝 交易紀錄 (倒序)"):
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
 
-        with tab2:
-            st.markdown("### 🏆 華爾街英雄榜 (依照綜合戰力排序)")
+        elif view_mode == "🏆 英雄榜 (戰力積分)":
+            st.markdown("### 🏆 華爾街英雄榜")
             st.markdown("""
             > **⚔️ 戰力公式**：
             > * **狙擊率 (40%)**：平均單筆交易報酬率，考驗你的精準度。
@@ -486,11 +500,12 @@ else:
                 except: st.write("無紀錄")
             else: st.info("尚無紀錄")
 
-        with tab3:
+        elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.7**: [UI] 瀏覽器標題與歡迎詞更新。
-            * **v4.6**: [Bug Fix] 修復空單回補本金計算。
+            * **v4.8**: [Mobile] 優化手機版體驗，改用大按鈕(Radio)取代分頁(Tabs)以解決點擊困難問題。
+            * **v4.7**: 標題簡化。
+            * **v4.6**: 修復空單回補本金計算。
             """)
         
         if st.session_state.auto_play:
