@@ -13,17 +13,18 @@ import math
 # --- 1. 全域設定 ---
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
-# CSS 優化：針對手機介面優化按鈕大小
+# CSS 優化：針對手機與深色模式的強制修正
 st.markdown("""
 <style>
+    /* 1. 側邊欄間距優化 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
     
-    /* 加大側邊欄按鈕，方便手機點擊 */
+    /* 2. 加大按鈕，方便手機點擊 */
     section[data-testid="stSidebar"] .stButton>button {
         width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px;
     }
     
-    /* 買賣按鈕顏色 */
+    /* 3. 買賣按鈕顏色 */
     div[data-testid="stSidebar"] button:contains("買進") {
         background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important;
     }
@@ -31,34 +32,41 @@ st.markdown("""
         background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
     }
     
-    /* 導航列優化：讓 Radio Button 看起來像分頁按鈕 */
+    /* 4. [關鍵修復] 選單 Radio Button 樣式強制覆蓋 */
     div[role="radiogroup"] {
-        display: flex;
-        flex-direction: row;
-        justify-content: center;
-        width: 100%;
+        background-color: transparent;
+        padding: 5px;
+        border-radius: 10px;
+    }
+    
+    /* 未選中的按鈕：強制深黑字體，淺灰背景 */
+    div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        color: #333333 !important; 
+        font-weight: 900 !important;
+        font-size: 16px !important;
     }
     div[role="radiogroup"] label {
-        flex: 1;
-        text-align: center;
-        background-color: #f0f2f6;
-        border: 1px solid #ddd;
-        padding: 10px;
-        margin: 0 2px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-weight: bold;
-    }
-    div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #ff4b4b;
-        color: white;
-        border-color: #ff4b4b;
+        background-color: #e0e0e0 !important;
+        border: 1px solid #cccccc !important;
+        margin-right: 5px !important;
+        padding: 10px 20px !important;
+        border-radius: 8px !important;
     }
 
+    /* 選中的按鈕：紅底白字 */
+    div[role="radiogroup"] label[data-checked="true"] {
+        background-color: #ff4b4b !important;
+        border: 1px solid #ff4b4b !important;
+    }
+    div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p {
+        color: #ffffff !important;
+    }
+
+    /* 5. 文字與區塊優化 */
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
     
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
-    .asset-label { font-size: 14px; color: #666; }
+    .asset-label { font-size: 14px; color: #666; font-weight: bold; }
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
     
     .warning-text {
@@ -67,7 +75,6 @@ st.markdown("""
         line-height: 1.6;
     }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
-    .warning-text a:hover { border-bottom: 1px solid #E1306C; }
     
     .reveal-box {
         padding: 15px; background-color: #d4edda; color: #155724; border-radius: 8px;
@@ -81,15 +88,8 @@ st.markdown("""
     }
     @keyframes shake {
       0% { transform: translate(1px, 1px) rotate(0deg); }
-      10% { transform: translate(-1px, -2px) rotate(-1deg); }
-      20% { transform: translate(-3px, 0px) rotate(1deg); }
-      30% { transform: translate(3px, 2px) rotate(0deg); }
-      40% { transform: translate(1px, -1px) rotate(1deg); }
-      50% { transform: translate(-1px, 2px) rotate(-1deg); }
-      60% { transform: translate(-3px, 1px) rotate(0deg); }
-      70% { transform: translate(3px, 1px) rotate(-1deg); }
-      80% { transform: translate(-1px, -1px) rotate(1deg); }
-      90% { transform: translate(1px, 2px) rotate(0deg); }
+      25% { transform: translate(-3px, 0px) rotate(1deg); }
+      75% { transform: translate(3px, 1px) rotate(-1deg); }
       100% { transform: translate(1px, -2px) rotate(-1deg); }
     }
 </style>
@@ -451,7 +451,7 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
         
-        # ★★★ 關鍵修改：使用 st.radio 替代 st.tabs ★★★
+        # [Mobile Fix] 改用 Radio 按鈕選單
         st.markdown("---")
         view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
 
@@ -459,6 +459,8 @@ else:
             display_start = max(0, curr_idx - 100)
             display_df = df.iloc[display_start : curr_idx+1]
             chart_title = f"{masked_name} - {curr_price}"
+            
+            # [Mobile Fix] 調整圖表高度為 550px，優化手機瀏覽
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
             fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA5'], line=dict(color='#FFD700', width=1), name='5MA'), row=1, col=1)
@@ -480,9 +482,16 @@ else:
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
             
-            fig.update_layout(height=800, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, title=dict(text=chart_title, x=0.05, y=0.98), xaxis_rangeslider_visible=False)
+            # [Mobile Fix] 關閉 dragmode，讓手機可以捲動網頁
+            fig.update_layout(height=550, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
+                            title=dict(text=chart_title, x=0.05, y=0.98), 
+                            xaxis_rangeslider_visible=False,
+                            dragmode=False) # 重要：禁止圖表拖曳
+            
             fig.update_xaxes(showticklabels=False, row=1, col=1); fig.update_xaxes(showticklabels=False, row=2, col=1)
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # [Mobile Fix] 禁止手指縮放，避免誤觸
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
             
             with st.expander("📝 交易紀錄 (倒序)"):
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
@@ -503,9 +512,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.8**: [Mobile] 優化手機版體驗，改用大按鈕(Radio)取代分頁(Tabs)以解決點擊困難問題。
+            * **v4.9**: [Mobile] 針對手機瀏覽器(Threads/LINE)優化，修復滑動困難與選單看不見的問題。調整 K 線高度。
             * **v4.7**: 標題簡化。
-            * **v4.6**: 修復空單回補本金計算。
+            * **v4.6**: [Bug Fix] 修復空單回補本金計算。
             """)
         
         if st.session_state.auto_play:
