@@ -13,20 +13,35 @@ import math
 # --- 1. 全域設定 ---
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
-# CSS 優化：針對手機「滑動卡死」與「底部留白」的最終修復
+# --- 交易金句庫 ---
+TRADING_TIPS = [
+    "📉 截斷虧損，讓利潤奔跑。",
+    "🛑 進場靠技術，出場靠紀律。",
+    "👀 新手看價，老手看量，高手看籌碼。",
+    "🐢 慢就是快，不要急著把錢輸光。",
+    "💎 本金第一，獲利第二。",
+    "🌊 不要預測行情，要跟隨行情。",
+    "🧘‍♀️ 保持空手也是一種操作。",
+    "🔪 接刀子通常會滿手血，確認止跌再進場。",
+    "📉 順勢交易，不要隨便摸頭猜底。",
+    "💀 只有活下來的人，才有資格談獲利。"
+]
+
+# CSS 優化：修復手機側邊欄消失問題
 st.markdown("""
 <style>
-    /* 1. 全域容器調整：消除頂部與底部不必要的空白 */
+    /* 1. 全域容器調整 */
     .block-container {
         padding-top: 1rem !important;
         padding-bottom: 0rem !important;
         max-width: 100%;
     }
     
-    /* 隱藏 Streamlit 預設的 footer 與漢堡選單，爭取空間 */
+    /* [關鍵修復] 移除 header 隱藏，讓手機左上角的 > 按鈕回來！ */
+    /* header {visibility: hidden;}  <-- 這一行殺死了側邊欄按鈕，已移除 */
+    
     footer {visibility: hidden;}
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
 
     /* 2. 側邊欄間距壓縮 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
@@ -44,7 +59,7 @@ st.markdown("""
         background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
     }
     
-    /* 5. 選單 Radio Button (強制黑字白底 / 紅底白字) */
+    /* 5. 選單 Radio Button */
     div[role="radiogroup"] {
         background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px;
     }
@@ -54,8 +69,7 @@ st.markdown("""
     div[role="radiogroup"] label {
         background-color: #e0e0e0 !important; border: 1px solid #cccccc !important;
         margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important;
-        flex-grow: 1; /* 讓按鈕平均分配寬度 */
-        text-align: center;
+        flex-grow: 1; text-align: center;
     }
     div[role="radiogroup"] label[data-checked="true"] {
         background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important;
@@ -83,6 +97,12 @@ st.markdown("""
         padding: 20px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
         text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; 
         border: 3px solid #ff0000;
+    }
+    
+    /* 提示小卡樣式 */
+    .tip-box {
+        background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px;
+        font-size: 14px; border-left: 4px solid #2196f3; margin-top: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -347,7 +367,11 @@ else:
             if st.button("重試"): reset_game(); st.rerun()
             st.stop()
 
-        if st.session_state.first_load: st.toast("👈 左側點擊「▶️ 播放」開始！", icon="💡"); st.session_state.first_load = False
+        if st.session_state.first_load:
+            # [功能] 初始引導提示
+            st.toast("👈 手機用戶請點擊左上角「>」打開下單面板！", icon="💡")
+            st.info("👈 電腦/手機請點擊左上角「>」符號，打開控制面板開始下單！")
+            st.session_state.first_load = False
 
         curr_idx = st.session_state.step
         if curr_idx >= len(df): st.session_state.auto_play = False; curr_idx = len(df)-1
@@ -442,6 +466,10 @@ else:
                 with st.form("fb"):
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
+            
+            # [功能] 隨機交易金句
+            tip = random.choice(TRADING_TIPS)
+            st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
         view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
@@ -451,7 +479,6 @@ else:
             display_df = df.iloc[display_start : curr_idx+1]
             chart_title = f"{masked_name} - {curr_price}"
             
-            # [Mobile Fix] 調整高度 & 鎖定軸
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
             fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA5'], line=dict(color='#FFD700', width=1), name='5MA'), row=1, col=1)
@@ -473,7 +500,6 @@ else:
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
             
-            # [Mobile Fix] 鎖定軸，禁止縮放平移，交還卷軸控制權
             fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
                             title=dict(text=chart_title, x=0.05, y=0.98), 
                             xaxis_rangeslider_visible=False,
@@ -484,7 +510,6 @@ else:
             fig.update_xaxes(showticklabels=False, row=2, col=1, fixedrange=True)
             fig.update_yaxes(fixedrange=True, row=2, col=1)
             
-            # [Mobile Fix] 開啟 staticPlot，這是解決 Threads 瀏覽器無法滑動的終極手段
             st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
             
             with st.expander("📝 交易紀錄 (倒序)"):
@@ -506,6 +531,7 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
+            * **v4.12**: [UI] 修復手機側邊欄消失的 CSS 錯誤，新增新手引導與交易語錄。
             * **v4.11**: [Mobile] 針對 Threads/LINE 瀏覽器進行極致優化，開啟 StaticPlot 模式，修復滑動卡死問題，並移除底部留白。
             * **v4.8**: 優化手機體驗。
             """)
