@@ -13,18 +13,30 @@ import math
 # --- 1. 全域設定 ---
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
-# CSS 優化：針對手機介面、深色模式、以及圖表滑動問題的總修正
+# CSS 優化：針對手機「滑動卡死」與「底部留白」的最終修復
 st.markdown("""
 <style>
-    /* 1. 側邊欄間距 */
+    /* 1. 全域容器調整：消除頂部與底部不必要的空白 */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+        max-width: 100%;
+    }
+    
+    /* 隱藏 Streamlit 預設的 footer 與漢堡選單，爭取空間 */
+    footer {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* 2. 側邊欄間距壓縮 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
     
-    /* 2. 大按鈕 */
+    /* 3. 大按鈕優化 */
     section[data-testid="stSidebar"] .stButton>button {
         width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px;
     }
     
-    /* 3. 買賣按鈕顏色 */
+    /* 4. 買賣按鈕顏色 */
     div[data-testid="stSidebar"] button:contains("買進") {
         background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important;
     }
@@ -32,16 +44,18 @@ st.markdown("""
         background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
     }
     
-    /* 4. 選單 Radio Button (強制黑字白底 / 紅底白字) */
+    /* 5. 選單 Radio Button (強制黑字白底 / 紅底白字) */
     div[role="radiogroup"] {
-        background-color: transparent; padding: 5px; border-radius: 10px;
+        background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px;
     }
     div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         color: #333333 !important; font-weight: 900 !important; font-size: 16px !important;
     }
     div[role="radiogroup"] label {
         background-color: #e0e0e0 !important; border: 1px solid #cccccc !important;
-        margin-right: 5px !important; padding: 10px 20px !important; border-radius: 8px !important;
+        margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important;
+        flex-grow: 1; /* 讓按鈕平均分配寬度 */
+        text-align: center;
     }
     div[role="radiogroup"] label[data-checked="true"] {
         background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important;
@@ -50,15 +64,7 @@ st.markdown("""
         color: #ffffff !important;
     }
 
-    /* 5. [關鍵修復] 強制讓圖表區域可以「垂直捲動」，不要捕捉手指 */
-    .js-plotly-plot {
-        touch-action: pan-y !important; 
-    }
-    .stPlotlyChart {
-        touch-action: pan-y !important;
-    }
-
-    /* 其他樣式 */
+    /* 6. 其他樣式 */
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
     .asset-label { font-size: 14px; color: #666; font-weight: bold; }
@@ -66,7 +72,7 @@ st.markdown("""
     .warning-text {
         color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800;
         border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0;
-        line-height: 1.6;
+        line-height: 1.6; font-size: 14px;
     }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
     .reveal-box {
@@ -74,11 +80,10 @@ st.markdown("""
         text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 10px; border: 2px solid #c3e6cb;
     }
     .margin-call-box {
-        padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
-        text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 20px; 
-        border: 3px solid #ff0000; animation: shake 0.5s;
+        padding: 20px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
+        text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; 
+        border: 3px solid #ff0000;
     }
-    @keyframes shake { 0% { transform: translate(1px, 1px) rotate(0deg); } 25% { transform: translate(-3px, 0px) rotate(1deg); } 75% { transform: translate(3px, 1px) rotate(-1deg); } 100% { transform: translate(1px, -2px) rotate(-1deg); } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -469,18 +474,18 @@ else:
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
             
             # [Mobile Fix] 鎖定軸，禁止縮放平移，交還卷軸控制權
-            fig.update_layout(height=550, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
+            fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
                             title=dict(text=chart_title, x=0.05, y=0.98), 
                             xaxis_rangeslider_visible=False,
-                            dragmode=False) # 禁止拖曳選取
+                            dragmode=False) 
             
-            # [Mobile Fix] 關鍵：鎖定軸範圍，讓瀏覽器處理滑動
             fig.update_xaxes(showticklabels=False, row=1, col=1, fixedrange=True)
             fig.update_yaxes(fixedrange=True, row=1, col=1)
             fig.update_xaxes(showticklabels=False, row=2, col=1, fixedrange=True)
             fig.update_yaxes(fixedrange=True, row=2, col=1)
             
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False, 'staticPlot': False})
+            # [Mobile Fix] 開啟 staticPlot，這是解決 Threads 瀏覽器無法滑動的終極手段
+            st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
             
             with st.expander("📝 交易紀錄 (倒序)"):
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
@@ -501,7 +506,7 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.10**: [Mobile] 修正手機瀏覽器(Threads/LINE)滑動卡住與選單文字看不見的問題。
+            * **v4.11**: [Mobile] 針對 Threads/LINE 瀏覽器進行極致優化，開啟 StaticPlot 模式，修復滑動卡死問題，並移除底部留白。
             * **v4.8**: 優化手機體驗。
             """)
         
