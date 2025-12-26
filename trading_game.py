@@ -61,28 +61,16 @@ st.markdown("""
 
 FILES = { "leaderboard": "leaderboard_tw_v4.csv", "feedback": "feedback.csv", "traffic": "traffic_log.csv" }
 
-# --- 2. 妖股名單 (專選股本小、震幅大) ---
 HOT_STOCKS_MAP = {
-    # 神盾集團 / IP (極度活潑)
     '6462.TWO': '神盾', '8054.TWO': '安國', '6684.TWO': '安格', '3529.TWO': '力旺', 
     '6531.TW': '愛普', '6643.TW': 'M31', '3661.TW': '世芯-KY',
-    
-    # 矽光子 / 光通訊 (波動大)
     '4979.TW': '華星光', '3363.TW': '上詮', '3450.TW': '聯鈞', '4908.TWO': '前鼎', 
     '3163.TWO': '波若威', '4977.TW': '眾達-KY',
-    
-    # 重電 / 綠能 / 線纜 (主力股)
     '1519.TW': '華城', '1514.TW': '亞力', '1513.TW': '中興電', '1609.TW': '大亞',
     '6806.TW': '森崴能源', '9958.TW': '世紀鋼',
-    
-    # 生技 / 化工 (妖股大本營)
     '6472.TWO': '保瑞', '4763.TWO': '材料-KY', '1795.TWO': '美時', '4114.TWO': '健喬',
-    
-    # 散熱 / 機殼 (當沖熱門)
     '3017.TW': '奇鋐', '3324.TWO': '雙鴻', '8996.TWO': '高力', '3653.TW': '健策',
     '3032.TW': '偉訓', '8210.TW': '勤誠',
-    
-    # 設備 / CoWoS
     '3583.TW': '辛耘', '3131.TW': '弘塑', '6187.TWO': '萬潤', '5443.TWO': '均豪'
 }
 
@@ -139,9 +127,8 @@ def calculate_technical_indicators(df):
     except: return df
 
 def load_data():
-    max_retries = 30 # 增加重試次數，確保一定能找到符合條件的
+    max_retries = 30
     ticker_list = list(HOT_STOCKS_MAP.keys())
-    
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
         try:
@@ -150,31 +137,18 @@ def load_data():
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
             
-            # ★★★ 波動率過濾器 (Volatility Filter) ★★★
-            # 計算每根K線的高低震幅百分比：(High - Low) / Open
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
-            avg_fluctuation = df['Fluctuation'].mean()
-            max_fluctuation = df['Fluctuation'].max()
-            
-            # 條件：平均震幅太小(死魚股) 或 最大震幅不夠(沒行情) 則跳過
-            # 這裡設定：平均單根5分K震幅至少要 0.2% 且 曾經出現過 > 1.5% 的波動
-            # 這對 5分K 來說已經是很活潑的股票了 (一天有 54 根 5分K)
-            if avg_fluctuation < 0.15 or max_fluctuation < 1.5:
-                continue
+            if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
             df = calculate_technical_indicators(df)
             df.dropna(inplace=True); df.reset_index(inplace=True); df['Bar_Index'] = range(len(df))
             if len(df) < 200: continue
-            
-            # 隨機切入點
             max_start = len(df) - 150
             start_idx = random.randint(50, max_start) if max_start > 50 else 50
             st.session_state.step = start_idx
             st.session_state.first_load = True
             return selected_ticker, HOT_STOCKS_MAP[selected_ticker], df
         except: continue
-    
-    # 萬一真的都找不到(機率極低)，回傳最後一次嘗試的
     return selected_ticker, HOT_STOCKS_MAP.get(selected_ticker, "未知"), df
 
 def reset_game():
@@ -210,7 +184,6 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (avg - price) * cover_qty
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
-                
                 st.session_state.balance += (principal_returned + profit - fee)
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
@@ -235,7 +208,6 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (price - avg) * sell_qty; revenue = price * sell_qty
                 trade_roi = (price - avg) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
-
                 st.session_state.balance += (revenue - fee); st.session_state.position -= sell_qty
                 st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
                 if remaining_qty > 0:
@@ -309,6 +281,7 @@ if st.session_state.is_admin:
 else:
     if not st.session_state.game_started:
         st.markdown("<h1 style='text-align: center;'>⚡ 交易挑戰賽，戰力積分版</h1>", unsafe_allow_html=True)
+        # [修改] 歡迎詞更新 (標註重點與顏色)
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
@@ -316,7 +289,7 @@ else:
         不小心開發這程式到上頭，成就感滿滿，希望你們喜歡，我要去補眠了 😴<br>
         <br>
         歡迎脆追蹤按起來 <a href="https://www.threads.net/@wowwow31001" target="_blank">wowwow31001</a>!<br>
-        真正有料的是12/7日那篇文章<br>
+        <strong style='background-color: #ffffcc; color: #ff0000; padding: 2px 5px; border-radius: 4px;'>真正有料的是12/7日那個程式</strong><br>
         <br>
         如果畫面突然重啟，代表我正在修改程式，請見諒。
         </div>
@@ -455,7 +428,6 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            # 隨機交易金句
             TRADING_TIPS = ["📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。", "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。", "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。", "💀 只有活下來的人，才有資格談獲利。"]
             tip = random.choice(TRADING_TIPS)
             st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
@@ -520,9 +492,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.14**: [Logic] 新增「波動率濾網」，自動過濾死魚股，確保場場是妖股。
+            * **v4.15**: [UI] 歡迎詞文案優化，針對重點文字加上顯眼的高亮底色。
+            * **v4.14**: [Logic] 增加波動率濾網，過濾死魚股。
             * **v4.13**: [UI] 正中央彈窗顯示結算結果。
-            * **v4.11**: [Mobile] 手機極致優化，開啟 StaticPlot。
             """)
         
         if st.session_state.auto_play:
