@@ -16,17 +16,24 @@ st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔�
 # CSS 優化
 st.markdown("""
 <style>
+    /* 1. 全域容器 */
     .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; max-width: 100%; }
     footer {visibility: hidden;} #MainMenu {visibility: hidden;}
+
+    /* 2. 側邊欄與按鈕 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
     section[data-testid="stSidebar"] .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px; }
     div[data-testid="stSidebar"] button:contains("買進") { background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important; }
     div[data-testid="stSidebar"] button:contains("賣出") { background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important; }
+    
+    /* 3. 選單 Radio Button */
     div[role="radiogroup"] { background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px; }
     div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { color: #333333 !important; font-weight: 900 !important; font-size: 16px !important; }
     div[role="radiogroup"] label { background-color: #e0e0e0 !important; border: 1px solid #cccccc !important; margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important; flex-grow: 1; text-align: center; }
     div[role="radiogroup"] label[data-checked="true"] { background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important; }
     div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p { color: #ffffff !important; }
+
+    /* 4. 彈窗與提示 */
     .reveal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9998; backdrop-filter: blur(5px); }
     .reveal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; background-color: #ffffff; color: #333; border-radius: 20px; padding: 30px; text-align: center; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 4px solid #4CAF50; animation: popIn 0.5s; }
     .reveal-title { font-size: 28px; font-weight: 900; color: #4CAF50; margin-bottom: 10px; }
@@ -34,7 +41,10 @@ st.markdown("""
     .reveal-stat { font-size: 18px; margin: 5px 0; color: #555; }
     .reveal-stat span { font-weight: bold; color: #000; }
     @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+
     .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
+
+    /* 其他 */
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
     .asset-label { font-size: 14px; color: #666; font-weight: bold; }
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
@@ -42,6 +52,8 @@ st.markdown("""
     .tip-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 14px; border-left: 4px solid #2196f3; margin-top: 10px; }
     .warning-text { color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800; border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0; line-height: 1.6; font-size: 14px; }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
+    
+    /* 圖表互動修正 */
     .js-plotly-plot { touch-action: pan-y !important; }
     .stPlotlyChart { touch-action: pan-y !important; }
     
@@ -118,9 +130,7 @@ def calculate_technical_indicators(df):
         df['MACD_Hist'] = df['MACD'] - df['Signal']
         
         # ★★★ AI 訊號計算 ★★★
-        # 黃金交叉: 5MA 向上突破 22MA
         df['Signal_Bull'] = (df['MA5'] > df['MA22']) & (df['MA5'].shift(1) <= df['MA22'].shift(1))
-        # 死亡交叉: 5MA 向下摜破 22MA
         df['Signal_Bear'] = (df['MA5'] < df['MA22']) & (df['MA5'].shift(1) >= df['MA22'].shift(1))
         
         return df
@@ -446,10 +456,6 @@ else:
                 else:
                     hint = "🐢 <span style='color:gray'>盤整震盪</span>：均線糾結，方向未明，建議觀望或區間操作。"
                 st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
-            else:
-                TRADING_TIPS = ["📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。", "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。", "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。", "💀 只有活下來的人，才有資格談獲利。"]
-                tip = random.choice(TRADING_TIPS)
-                st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
         view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
@@ -526,9 +532,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.17**: [Feature] 新增「AI 投顧提示」，在K線圖上標示轉強/轉弱點，並提供即時盤勢解讀。
+            * **v4.18**: [UI] 移除側邊欄隨機交易筆記，保持介面清爽。
+            * **v4.17**: [Feature] 新增「AI 投顧提示」。
             * **v4.16**: [Optimization] 增加價格濾網(<300元)，減少圖表閃爍。
-            * **v4.15**: [UI] 歡迎詞高亮優化。
             """)
         
         if st.session_state.auto_play:
