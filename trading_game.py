@@ -13,15 +13,7 @@ import math
 # --- 1. 全域設定 ---
 st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔️")
 
-# --- 交易金句庫 ---
-TRADING_TIPS = [
-    "📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。",
-    "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。",
-    "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。",
-    "💀 只有活下來的人，才有資格談獲利。"
-]
-
-# CSS 優化：彈窗置中 + 手機體驗
+# CSS 優化
 st.markdown("""
 <style>
     /* 1. 全域容器 */
@@ -41,45 +33,16 @@ st.markdown("""
     div[role="radiogroup"] label[data-checked="true"] { background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important; }
     div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p { color: #ffffff !important; }
 
-    /* 4. [關鍵修改] 震撼揭曉彈窗 (CSS Overlay) */
-    .reveal-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background-color: rgba(0, 0, 0, 0.7); /* 半透明黑背景 */
-        z-index: 9998;
-        backdrop-filter: blur(5px); /* 背景模糊效果 */
-    }
-    .reveal-box {
-        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 85%; max-width: 400px;
-        background-color: #ffffff;
-        color: #333;
-        border-radius: 20px;
-        padding: 30px;
-        text-align: center;
-        z-index: 9999;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        border: 4px solid #4CAF50;
-        animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-    }
+    /* 4. 彈窗與提示 */
+    .reveal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9998; backdrop-filter: blur(5px); }
+    .reveal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; background-color: #ffffff; color: #333; border-radius: 20px; padding: 30px; text-align: center; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 4px solid #4CAF50; animation: popIn 0.5s; }
     .reveal-title { font-size: 28px; font-weight: 900; color: #4CAF50; margin-bottom: 10px; }
     .reveal-stock { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; border-bottom: 2px dashed #eee; padding-bottom: 10px;}
     .reveal-stat { font-size: 18px; margin: 5px 0; color: #555; }
     .reveal-stat span { font-weight: bold; color: #000; }
-    
-    @keyframes popIn {
-        0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
-        100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-    }
+    @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
-    /* 5. 斷頭警告樣式 */
-    .margin-call-box {
-        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        width: 85%; max-width: 400px;
-        padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
-        text-align: center; font-size: 24px; font-weight: bold;
-        border: 4px solid #ff0000; z-index: 10000;
-        box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
-    }
+    .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
 
     /* 其他 */
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
@@ -87,7 +50,6 @@ st.markdown("""
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
     .tip-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 14px; border-left: 4px solid #2196f3; margin-top: 20px; }
-    
     .warning-text { color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800; border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0; line-height: 1.6; font-size: 14px; }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
     
@@ -99,17 +61,29 @@ st.markdown("""
 
 FILES = { "leaderboard": "leaderboard_tw_v4.csv", "feedback": "feedback.csv", "traffic": "traffic_log.csv" }
 
+# --- 2. 妖股名單 (專選股本小、震幅大) ---
 HOT_STOCKS_MAP = {
-    '8043.TWO': '蜜望實', '6127.TWO': '九豪', '6706.TW': '惠特', '4967.TW': '十銓',
-    '4979.TW': '華星光', '2413.TW': '環科', '5498.TWO': '凱崴', '4977.TW': '眾達-KY',
-    '1727.TW': '中華化', '6426.TWO': '統新', '4909.TWO': '新復興', '1815.TW': '富喬',
-    '4989.TW': '榮科', '8074.TWO': '鉅橡', '8021.TW': '尖點', '4916.TW': '事欣科',
-    '1528.TW': '恩德', '4991.TWO': '環宇-KY', '3236.TWO': '千如', '6163.TWO': '華電網',
-    '6155.TWO': '鈞寶', '8431.TWO': '匯鑽科', '3025.TW': '星通', '3689.TW': '湧德',
-    '3661.TW': '世芯-KY', '1519.TW': '華城', '3017.TW': '奇鋐', '3324.TWO': '雙鴻',
-    '6472.TWO': '保瑞', '3529.TWO': '力旺', '8069.TWO': '元太',
-    '6669.TW': '緯穎', '6415.TWO': '矽力-KY', '3035.TW': '智原', '3189.TW': '景碩',
-    '2603.TW': '長榮', '2609.TW': '陽明', '2409.TW': '友達', '6116.TW': '彩晶'
+    # 神盾集團 / IP (極度活潑)
+    '6462.TWO': '神盾', '8054.TWO': '安國', '6684.TWO': '安格', '3529.TWO': '力旺', 
+    '6531.TW': '愛普', '6643.TW': 'M31', '3661.TW': '世芯-KY',
+    
+    # 矽光子 / 光通訊 (波動大)
+    '4979.TW': '華星光', '3363.TW': '上詮', '3450.TW': '聯鈞', '4908.TWO': '前鼎', 
+    '3163.TWO': '波若威', '4977.TW': '眾達-KY',
+    
+    # 重電 / 綠能 / 線纜 (主力股)
+    '1519.TW': '華城', '1514.TW': '亞力', '1513.TW': '中興電', '1609.TW': '大亞',
+    '6806.TW': '森崴能源', '9958.TW': '世紀鋼',
+    
+    # 生技 / 化工 (妖股大本營)
+    '6472.TWO': '保瑞', '4763.TWO': '材料-KY', '1795.TWO': '美時', '4114.TWO': '健喬',
+    
+    # 散熱 / 機殼 (當沖熱門)
+    '3017.TW': '奇鋐', '3324.TWO': '雙鴻', '8996.TWO': '高力', '3653.TW': '健策',
+    '3032.TW': '偉訓', '8210.TW': '勤誠',
+    
+    # 設備 / CoWoS
+    '3583.TW': '辛耘', '3131.TW': '弘塑', '6187.TWO': '萬潤', '5443.TWO': '均豪'
 }
 
 # --- 3. 初始化 Session State ---
@@ -165,8 +139,9 @@ def calculate_technical_indicators(df):
     except: return df
 
 def load_data():
-    max_retries = 20
+    max_retries = 30 # 增加重試次數，確保一定能找到符合條件的
     ticker_list = list(HOT_STOCKS_MAP.keys())
+    
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
         try:
@@ -174,16 +149,33 @@ def load_data():
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
+            
+            # ★★★ 波動率過濾器 (Volatility Filter) ★★★
+            # 計算每根K線的高低震幅百分比：(High - Low) / Open
+            df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
+            avg_fluctuation = df['Fluctuation'].mean()
+            max_fluctuation = df['Fluctuation'].max()
+            
+            # 條件：平均震幅太小(死魚股) 或 最大震幅不夠(沒行情) 則跳過
+            # 這裡設定：平均單根5分K震幅至少要 0.2% 且 曾經出現過 > 1.5% 的波動
+            # 這對 5分K 來說已經是很活潑的股票了 (一天有 54 根 5分K)
+            if avg_fluctuation < 0.15 or max_fluctuation < 1.5:
+                continue
+
             df = calculate_technical_indicators(df)
             df.dropna(inplace=True); df.reset_index(inplace=True); df['Bar_Index'] = range(len(df))
             if len(df) < 200: continue
+            
+            # 隨機切入點
             max_start = len(df) - 150
             start_idx = random.randint(50, max_start) if max_start > 50 else 50
             st.session_state.step = start_idx
             st.session_state.first_load = True
             return selected_ticker, HOT_STOCKS_MAP[selected_ticker], df
         except: continue
-    return None, None, None
+    
+    # 萬一真的都找不到(機率極低)，回傳最後一次嘗試的
+    return selected_ticker, HOT_STOCKS_MAP.get(selected_ticker, "未知"), df
 
 def reset_game():
     if st.session_state.accumulate_mode:
@@ -202,7 +194,7 @@ def reset_game():
     st.session_state.auto_play = False
     st.session_state.trade_returns = []
     
-    with st.spinner('🎲 正在隨機抽取 (包含空頭股)...'):
+    with st.spinner('🎲 正在搜尋高波動妖股...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
 
@@ -218,6 +210,7 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (avg - price) * cover_qty
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
+                
                 st.session_state.balance += (principal_returned + profit - fee)
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
@@ -242,6 +235,7 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (price - avg) * sell_qty; revenue = price * sell_qty
                 trade_roi = (price - avg) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
+
                 st.session_state.balance += (revenue - fee); st.session_state.position -= sell_qty
                 st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
                 if remaining_qty > 0:
@@ -377,7 +371,6 @@ else:
             real_ticker = st.session_state.ticker
             save_score(st.session_state.nickname, real_ticker, real_name, 0, -100.0)
             
-            # [Fix] 使用 CSS Overlay 顯示斷頭畫面，避免跑版
             st.markdown(f"""
             <div class='reveal-overlay'></div>
             <div class='margin-call-box' style='position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;'>
@@ -437,14 +430,12 @@ else:
 
             st.divider()
             
-            # [關鍵修改] 彈窗 HTML 注入到主介面
             if st.button("🏳️ 結算 / 揭曉答案", use_container_width=True):
                 real_name = st.session_state.stock_name
                 real_ticker = st.session_state.ticker
                 save_score(st.session_state.nickname, real_ticker, real_name, est_total, roi)
                 st.balloons()
                 
-                # CSS Overlay 彈窗 (HTML)
                 st.markdown(f"""
                 <div class='reveal-overlay'></div>
                 <div class='reveal-box'>
@@ -464,6 +455,8 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
+            # 隨機交易金句
+            TRADING_TIPS = ["📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。", "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。", "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。", "💀 只有活下來的人，才有資格談獲利。"]
             tip = random.choice(TRADING_TIPS)
             st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
         
@@ -527,9 +520,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.13**: [UI] 新增「正中央彈窗」顯示結算結果，並優化 CSS Overlay。
-            * **v4.11**: [Mobile] 修復手機滑動卡死問題。
-            * **v4.6**: [Bug Fix] 修復空單回補本金計算。
+            * **v4.14**: [Logic] 新增「波動率濾網」，自動過濾死魚股，確保場場是妖股。
+            * **v4.13**: [UI] 正中央彈窗顯示結算結果。
+            * **v4.11**: [Mobile] 手機極致優化，開啟 StaticPlot。
             """)
         
         if st.session_state.auto_play:
