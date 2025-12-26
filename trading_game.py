@@ -127,7 +127,7 @@ def calculate_technical_indicators(df):
     except: return df
 
 def load_data():
-    max_retries = 30
+    max_retries = 50 # 提高重試次數，因為過濾條件變多了
     ticker_list = list(HOT_STOCKS_MAP.keys())
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
@@ -137,12 +137,18 @@ def load_data():
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
             
+            # 1. 價格過濾：超過 300 元的不要 (太貴、資金壓力大)
+            if df['Close'].iloc[-1] > 300:
+                continue
+
+            # 2. 波動過濾：震幅太小的不要
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
             if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
             df = calculate_technical_indicators(df)
             df.dropna(inplace=True); df.reset_index(inplace=True); df['Bar_Index'] = range(len(df))
             if len(df) < 200: continue
+            
             max_start = len(df) - 150
             start_idx = random.randint(50, max_start) if max_start > 50 else 50
             st.session_state.step = start_idx
@@ -168,7 +174,7 @@ def reset_game():
     st.session_state.auto_play = False
     st.session_state.trade_returns = []
     
-    with st.spinner('🎲 正在搜尋高波動妖股...'):
+    with st.spinner('🎲 搜尋波動大且<300元的主力股...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
 
@@ -281,7 +287,6 @@ if st.session_state.is_admin:
 else:
     if not st.session_state.game_started:
         st.markdown("<h1 style='text-align: center;'>⚡ 交易挑戰賽，戰力積分版</h1>", unsafe_allow_html=True)
-        # [修改] 歡迎詞更新 (標註重點與顏色)
         st.markdown("""
         <div class='warning-text'>
         ⚠️ 純粹好玩，大家聖誕節快樂！<br>
@@ -440,38 +445,51 @@ else:
             display_df = df.iloc[display_start : curr_idx+1]
             chart_title = f"{masked_name} - {curr_price}"
             
+            # [Optimization] theme=None to reduce flickering
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
-            fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA5'], line=dict(color='#FFD700', width=1), name='5MA'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA22'], line=dict(color='#9370DB', width=1), name='22MA'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA60'], line=dict(color='#2E8B57', width=1.5), name='60MA'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MA240'], line=dict(color='#A9A9A9', width=2), name='240MA'), row=1, col=1)
             
+            # Candlestick
+            fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
+            
+            # MAs
+            colors = {'MA5': '#FFD700', 'MA22': '#9370DB', 'MA60': '#2E8B57', 'MA240': '#A9A9A9'}
+            widths = {'MA5': 1, 'MA22': 1, 'MA60': 1.5, 'MA240': 2}
+            for ma in ['MA5', 'MA22', 'MA60', 'MA240']:
+                fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df[ma], line=dict(color=colors[ma], width=widths[ma]), name=ma), row=1, col=1)
+            
+            # Buy/Sell Markers
             visible = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= curr_idx]
             bx = [t['index'] for t in visible if t['type']=='buy']; by = [t['price']*0.99 for t in visible if t['type']=='buy']
             sx = [t['index'] for t in visible if t['type']=='sell']; sy = [t['price']*1.01 for t in visible if t['type']=='sell']
             if bx: fig.add_trace(go.Scatter(x=bx, y=by, mode='markers', name='買', marker=dict(symbol='triangle-up', size=12, color='red')), row=1, col=1)
             if sx: fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', name='賣', marker=dict(symbol='triangle-down', size=12, color='green')), row=1, col=1)
             
-            colors = ['#ef5350' if r['Open'] < r['Close'] else '#26a69a' for i, r in display_df.iterrows()]
-            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=colors, name="量"), row=2, col=1)
+            # Volume
+            vol_colors = ['#ef5350' if r['Open'] < r['Close'] else '#26a69a' for i, r in display_df.iterrows()]
+            fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=vol_colors, name="量"), row=2, col=1)
             
+            # MACD
             hist_c = ['#ef5350' if v > 0 else '#26a69a' for v in display_df['MACD_Hist']]
             fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['MACD_Hist'], marker_color=hist_c, name="MACD"), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
             
+            # Layout
             fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
-                            title=dict(text=chart_title, x=0.05, y=0.98), 
-                            xaxis_rangeslider_visible=False,
-                            dragmode=False) 
+                            title=dict(text=chart_title, x=0.05, y=0.98, font=dict(color="white")), # Fixed title color for dark mode
+                            xaxis_rangeslider_visible=False, dragmode=False,
+                            paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', # Dark theme background
+                            font=dict(color='white'))
             
-            fig.update_xaxes(showticklabels=False, row=1, col=1, fixedrange=True)
-            fig.update_yaxes(fixedrange=True, row=1, col=1)
-            fig.update_xaxes(showticklabels=False, row=2, col=1, fixedrange=True)
-            fig.update_yaxes(fixedrange=True, row=2, col=1)
+            fig.update_xaxes(showticklabels=False, row=1, col=1, fixedrange=True, gridcolor='#333')
+            fig.update_yaxes(fixedrange=True, row=1, col=1, gridcolor='#333')
+            fig.update_xaxes(showticklabels=False, row=2, col=1, fixedrange=True, gridcolor='#333')
+            fig.update_yaxes(fixedrange=True, row=2, col=1, gridcolor='#333')
+            fig.update_xaxes(showticklabels=False, row=3, col=1, fixedrange=True, gridcolor='#333')
+            fig.update_yaxes(fixedrange=True, row=3, col=1, gridcolor='#333')
             
-            st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
+            # [Optimization] theme=None to reduce flickering
+            st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True}, theme=None)
             
             with st.expander("📝 交易紀錄 (倒序)"):
                 for log in reversed(st.session_state.history[-10:]): st.caption(log)
@@ -492,9 +510,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.15**: [UI] 歡迎詞文案優化，針對重點文字加上顯眼的高亮底色。
-            * **v4.14**: [Logic] 增加波動率濾網，過濾死魚股。
-            * **v4.13**: [UI] 正中央彈窗顯示結算結果。
+            * **v4.16**: [Optimization] 增加價格濾網(<300元)，使用 Native Plotly 渲染減少閃爍。
+            * **v4.15**: [UI] 歡迎詞高亮優化。
+            * **v4.14**: [Logic] 增加波動率濾網。
             """)
         
         if st.session_state.auto_play:
