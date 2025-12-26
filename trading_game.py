@@ -16,24 +16,17 @@ st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔�
 # CSS 優化
 st.markdown("""
 <style>
-    /* 1. 全域容器 */
     .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; max-width: 100%; }
     footer {visibility: hidden;} #MainMenu {visibility: hidden;}
-
-    /* 2. 側邊欄與按鈕 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
     section[data-testid="stSidebar"] .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px; }
     div[data-testid="stSidebar"] button:contains("買進") { background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important; }
     div[data-testid="stSidebar"] button:contains("賣出") { background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important; }
-    
-    /* 3. 選單 Radio Button */
     div[role="radiogroup"] { background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px; }
     div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { color: #333333 !important; font-weight: 900 !important; font-size: 16px !important; }
     div[role="radiogroup"] label { background-color: #e0e0e0 !important; border: 1px solid #cccccc !important; margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important; flex-grow: 1; text-align: center; }
     div[role="radiogroup"] label[data-checked="true"] { background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important; }
     div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p { color: #ffffff !important; }
-
-    /* 4. 彈窗與提示 */
     .reveal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9998; backdrop-filter: blur(5px); }
     .reveal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; background-color: #ffffff; color: #333; border-radius: 20px; padding: 30px; text-align: center; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 4px solid #4CAF50; animation: popIn 0.5s; }
     .reveal-title { font-size: 28px; font-weight: 900; color: #4CAF50; margin-bottom: 10px; }
@@ -41,21 +34,20 @@ st.markdown("""
     .reveal-stat { font-size: 18px; margin: 5px 0; color: #555; }
     .reveal-stat span { font-weight: bold; color: #000; }
     @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
-
     .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
-
-    /* 其他 */
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
     .asset-label { font-size: 14px; color: #666; font-weight: bold; }
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
     .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
-    .tip-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 14px; border-left: 4px solid #2196f3; margin-top: 20px; }
+    .tip-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 14px; border-left: 4px solid #2196f3; margin-top: 10px; }
     .warning-text { color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800; border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0; line-height: 1.6; font-size: 14px; }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
-    
-    /* 圖表互動修正 */
     .js-plotly-plot { touch-action: pan-y !important; }
     .stPlotlyChart { touch-action: pan-y !important; }
+    
+    /* 輔助訊號說明 */
+    .signal-bull { color: #d90000; font-weight: bold; }
+    .signal-bear { color: #008000; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,7 +72,8 @@ default_values = {
     'history': [], 'trades_visual': [], 'data': None, 'ticker': "",
     'stock_name': "", 'nickname': "", 'game_started': False, 
     'auto_play': False, 'first_load': True, 'is_admin': False,
-    'trade_returns': [], 'accumulate_mode': False, 'last_equity': 10000000.0
+    'trade_returns': [], 'accumulate_mode': False, 'last_equity': 10000000.0,
+    'show_hints': False # 新手提示開關
 }
 
 for key, value in default_values.items():
@@ -111,7 +104,7 @@ def get_admin_data():
     else: data['leaderboard'] = pd.DataFrame()
     return data
 
-# --- 5. 核心邏輯 ---
+# --- 5. 核心邏輯 (含AI訊號計算) ---
 def calculate_technical_indicators(df):
     try:
         df['MA5'] = df['Close'].rolling(window=5).mean()
@@ -123,11 +116,18 @@ def calculate_technical_indicators(df):
         df['MACD'] = exp1 - exp2
         df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
         df['MACD_Hist'] = df['MACD'] - df['Signal']
+        
+        # ★★★ AI 訊號計算 ★★★
+        # 黃金交叉: 5MA 向上突破 22MA
+        df['Signal_Bull'] = (df['MA5'] > df['MA22']) & (df['MA5'].shift(1) <= df['MA22'].shift(1))
+        # 死亡交叉: 5MA 向下摜破 22MA
+        df['Signal_Bear'] = (df['MA5'] < df['MA22']) & (df['MA5'].shift(1) >= df['MA22'].shift(1))
+        
         return df
     except: return df
 
 def load_data():
-    max_retries = 50 # 提高重試次數，因為過濾條件變多了
+    max_retries = 50
     ticker_list = list(HOT_STOCKS_MAP.keys())
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
@@ -137,11 +137,7 @@ def load_data():
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
             
-            # 1. 價格過濾：超過 300 元的不要 (太貴、資金壓力大)
-            if df['Close'].iloc[-1] > 300:
-                continue
-
-            # 2. 波動過濾：震幅太小的不要
+            if df['Close'].iloc[-1] > 300: continue
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
             if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
@@ -174,7 +170,7 @@ def reset_game():
     st.session_state.auto_play = False
     st.session_state.trade_returns = []
     
-    with st.spinner('🎲 搜尋波動大且<300元的主力股...'):
+    with st.spinner('🎲 正在搜尋高波動妖股...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
 
@@ -305,9 +301,13 @@ else:
             with st.form("login"):
                 name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
                 is_accumulate = st.checkbox("🏆 啟用【資金繼承模式】(本局損益會帶到下一局)")
+                # [New] 新手輔助模式
+                show_hints = st.checkbox("🤖 啟用【AI 投顧提示】(K線圖顯示買賣訊號)")
+                
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name
                     st.session_state.accumulate_mode = is_accumulate
+                    st.session_state.show_hints = show_hints
                     st.session_state.game_started = True
                     reset_game()
                     st.rerun()
@@ -368,6 +368,7 @@ else:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
             
             if st.session_state.accumulate_mode: st.caption("🔥 資金繼承模式 ON")
+            if st.session_state.show_hints: st.caption("🤖 AI 投顧提示 ON")
             st.markdown(f"**標的: {masked_name}** (5分K)")
             
             pnl_color = "red" if unrealized >= 0 else "green"
@@ -433,9 +434,22 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            TRADING_TIPS = ["📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。", "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。", "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。", "💀 只有活下來的人，才有資格談獲利。"]
-            tip = random.choice(TRADING_TIPS)
-            st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
+            # [Feature] 即時盤勢 AI 解讀
+            if st.session_state.show_hints:
+                ma5 = curr_row['MA5']
+                ma22 = curr_row['MA22']
+                macd = curr_row['MACD']
+                if ma5 > ma22 and macd > 0:
+                    hint = "<span class='signal-bull'>🚀 多頭強勢</span>：5日線在月線之上，且MACD翻紅，順勢做多為宜。"
+                elif ma5 < ma22 and macd < 0:
+                    hint = "<span class='signal-bear'>🐻 空頭排列</span>：5日線跌破月線，且MACD翻綠，反彈皆空點。"
+                else:
+                    hint = "🐢 <span style='color:gray'>盤整震盪</span>：均線糾結，方向未明，建議觀望或區間操作。"
+                st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
+            else:
+                TRADING_TIPS = ["📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。", "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。", "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。", "💀 只有活下來的人，才有資格談獲利。"]
+                tip = random.choice(TRADING_TIPS)
+                st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
         view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
@@ -445,41 +459,44 @@ else:
             display_df = df.iloc[display_start : curr_idx+1]
             chart_title = f"{masked_name} - {curr_price}"
             
-            # [Optimization] theme=None to reduce flickering
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
             
-            # Candlestick
             fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
             
-            # MAs
+            # [Feature] AI 輔助標記 (買賣點)
+            if st.session_state.show_hints:
+                # 轉強訊號 (買點)
+                bull_signals = display_df[display_df['Signal_Bull']]
+                if not bull_signals.empty:
+                    fig.add_trace(go.Scatter(x=bull_signals['Bar_Index'], y=bull_signals['Low']*0.995, mode='markers', name='轉強', marker=dict(symbol='triangle-up', size=10, color='#d90000')), row=1, col=1)
+                # 轉弱訊號 (賣點)
+                bear_signals = display_df[display_df['Signal_Bear']]
+                if not bear_signals.empty:
+                    fig.add_trace(go.Scatter(x=bear_signals['Bar_Index'], y=bear_signals['High']*1.005, mode='markers', name='轉弱', marker=dict(symbol='triangle-down', size=10, color='#008000')), row=1, col=1)
+
             colors = {'MA5': '#FFD700', 'MA22': '#9370DB', 'MA60': '#2E8B57', 'MA240': '#A9A9A9'}
             widths = {'MA5': 1, 'MA22': 1, 'MA60': 1.5, 'MA240': 2}
             for ma in ['MA5', 'MA22', 'MA60', 'MA240']:
                 fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df[ma], line=dict(color=colors[ma], width=widths[ma]), name=ma), row=1, col=1)
             
-            # Buy/Sell Markers
             visible = [t for t in st.session_state.trades_visual if display_start <= t['index'] <= curr_idx]
             bx = [t['index'] for t in visible if t['type']=='buy']; by = [t['price']*0.99 for t in visible if t['type']=='buy']
             sx = [t['index'] for t in visible if t['type']=='sell']; sy = [t['price']*1.01 for t in visible if t['type']=='sell']
             if bx: fig.add_trace(go.Scatter(x=bx, y=by, mode='markers', name='買', marker=dict(symbol='triangle-up', size=12, color='red')), row=1, col=1)
             if sx: fig.add_trace(go.Scatter(x=sx, y=sy, mode='markers', name='賣', marker=dict(symbol='triangle-down', size=12, color='green')), row=1, col=1)
             
-            # Volume
             vol_colors = ['#ef5350' if r['Open'] < r['Close'] else '#26a69a' for i, r in display_df.iterrows()]
             fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['Volume'], marker_color=vol_colors, name="量"), row=2, col=1)
             
-            # MACD
             hist_c = ['#ef5350' if v > 0 else '#26a69a' for v in display_df['MACD_Hist']]
             fig.add_trace(go.Bar(x=display_df['Bar_Index'], y=display_df['MACD_Hist'], marker_color=hist_c, name="MACD"), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['MACD'], line=dict(color='#ffc107', width=1)), row=3, col=1)
             fig.add_trace(go.Scatter(x=display_df['Bar_Index'], y=display_df['Signal'], line=dict(color='#2196f3', width=1)), row=3, col=1)
             
-            # Layout
             fig.update_layout(height=450, margin=dict(l=10, r=10, t=10, b=10), showlegend=False, 
-                            title=dict(text=chart_title, x=0.05, y=0.98, font=dict(color="white")), # Fixed title color for dark mode
+                            title=dict(text=chart_title, x=0.05, y=0.98, font=dict(color="white")),
                             xaxis_rangeslider_visible=False, dragmode=False,
-                            paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', # Dark theme background
-                            font=dict(color='white'))
+                            paper_bgcolor='#0e1117', plot_bgcolor='#0e1117', font=dict(color='white'))
             
             fig.update_xaxes(showticklabels=False, row=1, col=1, fixedrange=True, gridcolor='#333')
             fig.update_yaxes(fixedrange=True, row=1, col=1, gridcolor='#333')
@@ -488,7 +505,6 @@ else:
             fig.update_xaxes(showticklabels=False, row=3, col=1, fixedrange=True, gridcolor='#333')
             fig.update_yaxes(fixedrange=True, row=3, col=1, gridcolor='#333')
             
-            # [Optimization] theme=None to reduce flickering
             st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True}, theme=None)
             
             with st.expander("📝 交易紀錄 (倒序)"):
@@ -510,9 +526,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.16**: [Optimization] 增加價格濾網(<300元)，使用 Native Plotly 渲染減少閃爍。
+            * **v4.17**: [Feature] 新增「AI 投顧提示」，在K線圖上標示轉強/轉弱點，並提供即時盤勢解讀。
+            * **v4.16**: [Optimization] 增加價格濾網(<300元)，減少圖表閃爍。
             * **v4.15**: [UI] 歡迎詞高亮優化。
-            * **v4.14**: [Logic] 增加波動率濾網。
             """)
         
         if st.session_state.auto_play:
