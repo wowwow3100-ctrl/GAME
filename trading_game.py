@@ -60,6 +60,7 @@ st.markdown("""
     /* 輔助訊號說明 */
     .signal-bull { color: #d90000; font-weight: bold; }
     .signal-bear { color: #008000; font-weight: bold; }
+    .signal-wait { color: #666; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +86,7 @@ default_values = {
     'stock_name': "", 'nickname': "", 'game_started': False, 
     'auto_play': False, 'first_load': True, 'is_admin': False,
     'trade_returns': [], 'accumulate_mode': False, 'last_equity': 10000000.0,
-    'show_hints': False # 新手提示開關
+    'show_hints': False
 }
 
 for key, value in default_values.items():
@@ -116,22 +117,43 @@ def get_admin_data():
     else: data['leaderboard'] = pd.DataFrame()
     return data
 
-# --- 5. 核心邏輯 (含AI訊號計算) ---
+# --- 5. 核心邏輯 (升級版 AI 訊號) ---
 def calculate_technical_indicators(df):
     try:
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA22'] = df['Close'].rolling(window=22).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
         df['MA240'] = df['Close'].rolling(window=240).mean()
+        
+        # 計算月線斜率 (判斷趨勢方向)
+        df['MA22_Slope'] = df['MA22'].diff()
+        
         exp1 = df['Close'].ewm(span=12, adjust=False).mean()
         exp2 = df['Close'].ewm(span=26, adjust=False).mean()
         df['MACD'] = exp1 - exp2
         df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
         df['MACD_Hist'] = df['MACD'] - df['Signal']
         
-        # ★★★ AI 訊號計算 ★★★
-        df['Signal_Bull'] = (df['MA5'] > df['MA22']) & (df['MA5'].shift(1) <= df['MA22'].shift(1))
-        df['Signal_Bear'] = (df['MA5'] < df['MA22']) & (df['MA5'].shift(1) >= df['MA22'].shift(1))
+        # ★★★ 升級版 AI 訊號 ★★★
+        # 條件 1: 均線排列 (短天期 > 長天期)
+        # 條件 2: 趨勢濾網 (長天期均線必須是上揚的，避免空頭反彈)
+        # 條件 3: 動能濾網 (MACD 柱狀體必須是增加的，避免動能衰竭)
+        
+        # 強力買進: 5MA>22MA 且 月線上揚 且 紅柱變長 (且紅柱>0)
+        df['Signal_Bull'] = (
+            (df['MA5'] > df['MA22']) & 
+            (df['MA22_Slope'] > 0) & 
+            (df['MACD_Hist'] > 0) &
+            (df['MACD_Hist'] > df['MACD_Hist'].shift(1))
+        )
+        
+        # 強力賣出: 5MA<22MA 且 月線下彎 且 綠柱變長 (且綠柱<0)
+        df['Signal_Bear'] = (
+            (df['MA5'] < df['MA22']) & 
+            (df['MA22_Slope'] < 0) & 
+            (df['MACD_Hist'] < 0) &
+            (df['MACD_Hist'] < df['MACD_Hist'].shift(1))
+        )
         
         return df
     except: return df
@@ -311,7 +333,6 @@ else:
             with st.form("login"):
                 name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
                 is_accumulate = st.checkbox("🏆 啟用【資金繼承模式】(本局損益會帶到下一局)")
-                # [New] 新手輔助模式
                 show_hints = st.checkbox("🤖 啟用【AI 投顧提示】(K線圖顯示買賣訊號)")
                 
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
@@ -444,17 +465,21 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            # [Feature] 即時盤勢 AI 解讀
+            # [Feature] AI 解讀 (Smart Filter)
             if st.session_state.show_hints:
-                ma5 = curr_row['MA5']
-                ma22 = curr_row['MA22']
-                macd = curr_row['MACD']
-                if ma5 > ma22 and macd > 0:
-                    hint = "<span class='signal-bull'>🚀 多頭強勢</span>：5日線在月線之上，且MACD翻紅，順勢做多為宜。"
-                elif ma5 < ma22 and macd < 0:
-                    hint = "<span class='signal-bear'>🐻 空頭排列</span>：5日線跌破月線，且MACD翻綠，反彈皆空點。"
+                is_bull = curr_row['Signal_Bull']
+                is_bear = curr_row['Signal_Bear']
+                slope = curr_row['MA22_Slope']
+                
+                if is_bull:
+                    hint = "<span class='signal-bull'>🚀 攻擊訊號</span>：趨勢向上 + 動能增強，多頭發動！"
+                elif is_bear:
+                    hint = "<span class='signal-bear'>📉 棄守訊號</span>：趨勢轉弱 + 動能翻空，建議出場。"
+                elif slope > 0:
+                    hint = "<span class='signal-wait'>🧘‍♀️ 多頭回檔</span>：月線向上，但短線整理中，等待攻擊訊號。"
                 else:
-                    hint = "🐢 <span style='color:gray'>盤整震盪</span>：均線糾結，方向未明，建議觀望或區間操作。"
+                    hint = "<span class='signal-wait'>👀 震盪觀望</span>：趨勢不明或空頭排列，請耐心等待。"
+                
                 st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -469,7 +494,7 @@ else:
             
             fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
             
-            # [Feature] AI 輔助標記 (買賣點)
+            # [Feature] AI 輔助標記 (Smart Filter)
             if st.session_state.show_hints:
                 # 轉強訊號 (買點)
                 bull_signals = display_df[display_df['Signal_Bull']]
@@ -532,8 +557,8 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.18**: [UI] 移除側邊欄隨機交易筆記，保持介面清爽。
-            * **v4.17**: [Feature] 新增「AI 投顧提示」。
+            * **v4.19**: [Logic] AI 投顧邏輯升級，加入趨勢與動能濾網，減少盤整假訊號。
+            * **v4.18**: [UI] 介面清爽化，移除隨機交易筆記。
             * **v4.16**: [Optimization] 增加價格濾網(<300元)，減少圖表閃爍。
             """)
         
