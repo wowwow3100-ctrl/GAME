@@ -34,7 +34,7 @@ st.markdown("""
     div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p { color: #ffffff !important; }
 
     /* 4. 彈窗與提示 */
-    .reveal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9998; backdrop-filter: blur(5px); }
+    .reveal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.85); z-index: 9998; backdrop-filter: blur(5px); }
     .reveal-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; background-color: #ffffff; color: #333; border-radius: 20px; padding: 30px; text-align: center; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 4px solid #4CAF50; animation: popIn 0.5s; }
     .reveal-title { font-size: 28px; font-weight: 900; color: #4CAF50; margin-bottom: 10px; }
     .reveal-stock { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; border-bottom: 2px dashed #eee; padding-bottom: 10px;}
@@ -43,6 +43,17 @@ st.markdown("""
     @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
     .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
+
+    /* 5. [關鍵新增] 倒數計時樣式 */
+    .countdown-box {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        font-size: 180px; font-weight: 900; color: #FFD700;
+        text-shadow: 0 0 30px rgba(0,0,0,0.9);
+        z-index: 10001;
+        animation: pulse 0.8s infinite;
+        font-family: 'Arial', sans-serif;
+    }
+    @keyframes pulse { 0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; } 50% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
 
     /* 其他 */
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
@@ -53,11 +64,9 @@ st.markdown("""
     .warning-text { color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800; border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0; line-height: 1.6; font-size: 14px; }
     .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
     
-    /* 圖表互動修正 */
     .js-plotly-plot { touch-action: pan-y !important; }
     .stPlotlyChart { touch-action: pan-y !important; }
     
-    /* 輔助訊號說明 */
     .signal-bull { color: #d90000; font-weight: bold; }
     .signal-bear { color: #008000; font-weight: bold; }
     .signal-wait { color: #666; font-weight: bold; }
@@ -85,8 +94,9 @@ default_values = {
     'history': [], 'trades_visual': [], 'data': None, 'ticker': "",
     'stock_name': "", 'nickname': "", 'game_started': False, 
     'auto_play': False, 'first_load': True, 'is_admin': False,
-    'trade_returns': [], 'accumulate_mode': False, 'last_equity': 10000000.0,
-    'show_hints': False
+    'trade_returns': [], 'last_equity': 10000000.0,
+    'show_hints': False,
+    'round': 1, 'max_rounds': 3, 'in_countdown': False
 }
 
 for key, value in default_values.items():
@@ -117,49 +127,27 @@ def get_admin_data():
     else: data['leaderboard'] = pd.DataFrame()
     return data
 
-# --- 5. 核心邏輯 (升級版 AI 訊號) ---
+# --- 5. 核心邏輯 ---
 def calculate_technical_indicators(df):
     try:
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA22'] = df['Close'].rolling(window=22).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
         df['MA240'] = df['Close'].rolling(window=240).mean()
-        
-        # 計算月線斜率 (判斷趨勢方向)
         df['MA22_Slope'] = df['MA22'].diff()
-        
         exp1 = df['Close'].ewm(span=12, adjust=False).mean()
         exp2 = df['Close'].ewm(span=26, adjust=False).mean()
         df['MACD'] = exp1 - exp2
         df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
         df['MACD_Hist'] = df['MACD'] - df['Signal']
         
-        # ★★★ 升級版 AI 訊號 ★★★
-        # 條件 1: 均線排列 (短天期 > 長天期)
-        # 條件 2: 趨勢濾網 (長天期均線必須是上揚的，避免空頭反彈)
-        # 條件 3: 動能濾網 (MACD 柱狀體必須是增加的，避免動能衰竭)
-        
-        # 強力買進: 5MA>22MA 且 月線上揚 且 紅柱變長 (且紅柱>0)
-        df['Signal_Bull'] = (
-            (df['MA5'] > df['MA22']) & 
-            (df['MA22_Slope'] > 0) & 
-            (df['MACD_Hist'] > 0) &
-            (df['MACD_Hist'] > df['MACD_Hist'].shift(1))
-        )
-        
-        # 強力賣出: 5MA<22MA 且 月線下彎 且 綠柱變長 (且綠柱<0)
-        df['Signal_Bear'] = (
-            (df['MA5'] < df['MA22']) & 
-            (df['MA22_Slope'] < 0) & 
-            (df['MACD_Hist'] < 0) &
-            (df['MACD_Hist'] < df['MACD_Hist'].shift(1))
-        )
-        
+        df['Signal_Bull'] = ((df['MA5'] > df['MA22']) & (df['MA22_Slope'] > 0) & (df['MACD_Hist'] > 0) & (df['MACD_Hist'] > df['MACD_Hist'].shift(1)))
+        df['Signal_Bear'] = ((df['MA5'] < df['MA22']) & (df['MA22_Slope'] < 0) & (df['MACD_Hist'] < 0) & (df['MACD_Hist'] < df['MACD_Hist'].shift(1)))
         return df
     except: return df
 
 def load_data():
-    max_retries = 50
+    max_retries = 100 # 提高重試次數，因為條件變嚴格了
     ticker_list = list(HOT_STOCKS_MAP.keys())
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
@@ -169,7 +157,10 @@ def load_data():
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
             
-            if df['Close'].iloc[-1] > 300: continue
+            # ★★★ 條件 1: 價格過濾 (只選 <= 200 元的) ★★★
+            if df['Close'].iloc[-1] > 200: continue
+
+            # 條件 2: 波動過濾 (震幅太小的不要)
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
             if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
@@ -185,24 +176,27 @@ def load_data():
         except: continue
     return selected_ticker, HOT_STOCKS_MAP.get(selected_ticker, "未知"), df
 
-def reset_game():
-    if st.session_state.accumulate_mode:
-        if st.session_state.last_equity <= 0:
-            st.session_state.balance = 10000000.0
-            st.toast("👼 破產保護啟動！資金已重置為 1,000 萬", icon="🔄")
-        else:
-            st.session_state.balance = st.session_state.last_equity
-    else:
+def reset_game(full_reset=False):
+    if full_reset:
         st.session_state.balance = 10000000.0
+        st.session_state.round = 1
+        st.session_state.trade_returns = []
+        st.session_state.last_equity = 10000000.0
+    else:
+        # 過關接關
+        st.session_state.balance = st.session_state.last_equity
+        st.session_state.round += 1
         
     st.session_state.position = 0
     st.session_state.avg_cost = 0.0
     st.session_state.history = []
     st.session_state.trades_visual = []
     st.session_state.auto_play = False
-    st.session_state.trade_returns = []
     
-    with st.spinner('🎲 正在搜尋高波動妖股...'):
+    # 啟動倒數
+    st.session_state.in_countdown = True
+    
+    with st.spinner('🎲 搜尋高波動、股價<200 的妖股...'):
         t, n, d = load_data()
         st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
 
@@ -272,7 +266,7 @@ def save_score(player, ticker, name, assets, roi):
         power_score = (avg_sniper * 40) + (roi * 30) + (profit_score * 0.3 * 30) 
         
         new = pd.DataFrame([{
-            "日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": name, 
+            "日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": "三關通關", 
             "綜合戰力": round(power_score, 1), "狙擊率(%)": round(avg_sniper, 2),
             "總報酬(%)": round(roi, 2), "總獲利($)": int(total_profit)
         }])
@@ -332,15 +326,13 @@ else:
         with col_b:
             with st.form("login"):
                 name = st.text_input("輸入你的綽號", "邊看盤邊大跳")
-                is_accumulate = st.checkbox("🏆 啟用【資金繼承模式】(本局損益會帶到下一局)")
                 show_hints = st.checkbox("🤖 啟用【AI 投顧提示】(K線圖顯示買賣訊號)")
-                
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name
-                    st.session_state.accumulate_mode = is_accumulate
                     st.session_state.show_hints = show_hints
                     st.session_state.game_started = True
-                    reset_game()
+                    # 開始新遊戲，從第一關開始
+                    reset_game(full_reset=True)
                     st.rerun()
         
         with st.sidebar:
@@ -355,8 +347,22 @@ else:
         df = st.session_state.data
         if df is None:
             st.error("資料載入失敗，請重試"); 
-            if st.button("重試"): reset_game(); st.rerun()
+            if st.button("重試"): reset_game(full_reset=True); st.rerun()
             st.stop()
+
+        # ★★★ 3, 2, 1 倒數動畫 ★★★
+        if st.session_state.in_countdown:
+            placeholder = st.empty()
+            for i in range(3, 0, -1):
+                placeholder.markdown(f"""
+                <div class='reveal-overlay'></div>
+                <div class='countdown-box'>{i}</div>
+                """, unsafe_allow_html=True)
+                time.sleep(1)
+            placeholder.empty()
+            st.session_state.in_countdown = False
+            st.session_state.auto_play = True
+            st.rerun()
 
         if st.session_state.first_load:
             st.toast("👈 手機請點左上角「>」打開下單面板！", icon="💡")
@@ -378,29 +384,29 @@ else:
             st.session_state.auto_play = False
             real_name = st.session_state.stock_name
             real_ticker = st.session_state.ticker
-            save_score(st.session_state.nickname, real_ticker, real_name, 0, -100.0)
+            # 破產時，直接紀錄失敗成績
+            save_score(st.session_state.nickname, real_ticker, f"破產-{real_name}", 0, -100.0)
             
             st.markdown(f"""
             <div class='reveal-overlay'></div>
             <div class='margin-call-box' style='position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;'>
-                💀 幫QQ！保證金維持率不足，已被強制斷頭出場！<br>
-                <div style='font-size: 18px; color: #555; margin-top: 10px;'>總資產歸零</div>
+                💀 挑戰失敗！資金歸零<br>
+                <div style='font-size: 18px; color: #555; margin-top: 10px;'>你在第 {st.session_state.round} 關陣亡了</div>
                 <div style='font-size: 20px; color: #333; margin: 10px 0;'>真相：{real_name} ({real_ticker})</div>
             </div>
             """, unsafe_allow_html=True)
             
-            st.session_state.last_equity = 0 
-            if st.button("💸 破產重來 (按此復活)", type="primary", use_container_width=True):
-                reset_game()
+            if st.button("💸 重新挑戰", type="primary", use_container_width=True):
+                reset_game(full_reset=True)
                 st.rerun()
             st.stop()
 
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
             
-            if st.session_state.accumulate_mode: st.caption("🔥 資金繼承模式 ON")
+            # [UI] 顯示目前關卡
+            st.info(f"🏆 目前關卡：Round {st.session_state.round} / 3")
             if st.session_state.show_hints: st.caption("🤖 AI 投顧提示 ON")
-            st.markdown(f"**標的: {masked_name}** (5分K)")
             
             pnl_color = "red" if unrealized >= 0 else "green"
             st.markdown(f"""
@@ -440,46 +446,50 @@ else:
 
             st.divider()
             
-            if st.button("🏳️ 結算 / 揭曉答案", use_container_width=True):
+            # [邏輯] 結算判斷
+            btn_text = "🏁 結算本局 (下一關)" if st.session_state.round < 3 else "🏆 最終結算 (上榜)"
+            if st.button(btn_text, use_container_width=True):
                 real_name = st.session_state.stock_name
                 real_ticker = st.session_state.ticker
-                save_score(st.session_state.nickname, real_ticker, real_name, est_total, roi)
+                st.session_state.last_equity = est_total
                 st.balloons()
                 
+                # 如果是第3關，才紀錄成績
+                if st.session_state.round >= 3:
+                    save_score(st.session_state.nickname, "ALL_CLEAR", "三關制霸", est_total, roi)
+                    msg_main = f"🎉 恭喜通關！最終資產：${int(est_total):,}"
+                else:
+                    msg_main = f"💰 Round {st.session_state.round} 完成！資產 ${int(est_total):,} 帶入下一關"
+
                 st.markdown(f"""
                 <div class='reveal-overlay'></div>
                 <div class='reveal-box'>
-                    <div class='reveal-title'>🎉 真相大白</div>
+                    <div class='reveal-title'>🎉 結算完成</div>
                     <div class='reveal-stock'>{real_name} ({real_ticker})</div>
-                    <div class='reveal-stat'>最終資產：<span>${int(est_total):,}</span></div>
-                    <div class='reveal-stat'>報酬率：<span>{roi:.2f}%</span></div>
-                    <div style='margin-top: 15px; font-size: 14px; color: #888;'>請等待 3 秒自動下一局...</div>
+                    <div class='reveal-stat'>{msg_main}</div>
+                    <div style='margin-top: 15px; font-size: 14px; color: #888;'>請等待 3 秒...</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                st.session_state.last_equity = est_total
-                time.sleep(3); reset_game(); st.rerun()
+                time.sleep(3)
+                if st.session_state.round >= 3:
+                    reset_game(full_reset=True) # 3關結束，重置
+                else:
+                    reset_game(full_reset=False) # 下一關
+                st.rerun()
 
             with st.popover("💬 回饋"):
                 with st.form("fb"):
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            # [Feature] AI 解讀 (Smart Filter)
+            # AI 投顧提示 (Smart Filter)
             if st.session_state.show_hints:
-                is_bull = curr_row['Signal_Bull']
-                is_bear = curr_row['Signal_Bear']
-                slope = curr_row['MA22_Slope']
-                
-                if is_bull:
-                    hint = "<span class='signal-bull'>🚀 攻擊訊號</span>：趨勢向上 + 動能增強，多頭發動！"
-                elif is_bear:
-                    hint = "<span class='signal-bear'>📉 棄守訊號</span>：趨勢轉弱 + 動能翻空，建議出場。"
-                elif slope > 0:
-                    hint = "<span class='signal-wait'>🧘‍♀️ 多頭回檔</span>：月線向上，但短線整理中，等待攻擊訊號。"
-                else:
-                    hint = "<span class='signal-wait'>👀 震盪觀望</span>：趨勢不明或空頭排列，請耐心等待。"
-                
+                is_bull = curr_row['Signal_Bull']; is_bear = curr_row['Signal_Bear']; slope = curr_row['MA22_Slope']
+                if is_bull: hint = "<span class='signal-bull'>🚀 攻擊訊號</span>：趨勢向上 + 動能增強，多頭發動！"
+                elif is_bear: hint = "<span class='signal-bear'>📉 棄守訊號</span>：趨勢轉弱 + 動能翻空，建議出場。"
+                elif slope > 0: hint = "<span class='signal-wait'>🧘‍♀️ 多頭回檔</span>：月線向上，短線整理。"
+                else: hint = "<span class='signal-wait'>👀 震盪觀望</span>：趨勢不明，耐心等待。"
                 st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
@@ -491,19 +501,13 @@ else:
             chart_title = f"{masked_name} - {curr_price}"
             
             fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.65, 0.15, 0.2])
-            
             fig.add_trace(go.Candlestick(x=display_df['Bar_Index'], open=display_df['Open'], high=display_df['High'], low=display_df['Low'], close=display_df['Close'], name="K線", increasing_line_color='#ef5350', decreasing_line_color='#26a69a'), row=1, col=1)
             
-            # [Feature] AI 輔助標記 (Smart Filter)
             if st.session_state.show_hints:
-                # 轉強訊號 (買點)
                 bull_signals = display_df[display_df['Signal_Bull']]
-                if not bull_signals.empty:
-                    fig.add_trace(go.Scatter(x=bull_signals['Bar_Index'], y=bull_signals['Low']*0.995, mode='markers', name='轉強', marker=dict(symbol='triangle-up', size=10, color='#d90000')), row=1, col=1)
-                # 轉弱訊號 (賣點)
+                if not bull_signals.empty: fig.add_trace(go.Scatter(x=bull_signals['Bar_Index'], y=bull_signals['Low']*0.995, mode='markers', name='轉強', marker=dict(symbol='triangle-up', size=10, color='#d90000')), row=1, col=1)
                 bear_signals = display_df[display_df['Signal_Bear']]
-                if not bear_signals.empty:
-                    fig.add_trace(go.Scatter(x=bear_signals['Bar_Index'], y=bear_signals['High']*1.005, mode='markers', name='轉弱', marker=dict(symbol='triangle-down', size=10, color='#008000')), row=1, col=1)
+                if not bear_signals.empty: fig.add_trace(go.Scatter(x=bear_signals['Bar_Index'], y=bear_signals['High']*1.005, mode='markers', name='轉弱', marker=dict(symbol='triangle-down', size=10, color='#008000')), row=1, col=1)
 
             colors = {'MA5': '#FFD700', 'MA22': '#9370DB', 'MA60': '#2E8B57', 'MA240': '#A9A9A9'}
             widths = {'MA5': 1, 'MA22': 1, 'MA60': 1.5, 'MA240': 2}
@@ -557,9 +561,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.19**: [Logic] AI 投顧邏輯升級，加入趨勢與動能濾網，減少盤整假訊號。
-            * **v4.18**: [UI] 介面清爽化，移除隨機交易筆記。
-            * **v4.16**: [Optimization] 增加價格濾網(<300元)，減少圖表閃爍。
+            * **v4.21**: [GamePlay] 3關制生存戰，增加3-2-1倒數，只玩<200元股票。
+            * **v4.19**: [Logic] AI 投顧邏輯升級。
+            * **v4.11**: [Mobile] 極致流暢滑動優化。
             """)
         
         if st.session_state.auto_play:
