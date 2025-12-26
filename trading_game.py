@@ -15,95 +15,85 @@ st.set_page_config(page_title="交易挑戰賽", layout="wide", page_icon="⚔�
 
 # --- 交易金句庫 ---
 TRADING_TIPS = [
-    "📉 截斷虧損，讓利潤奔跑。",
-    "🛑 進場靠技術，出場靠紀律。",
-    "👀 新手看價，老手看量，高手看籌碼。",
-    "🐢 慢就是快，不要急著把錢輸光。",
-    "💎 本金第一，獲利第二。",
-    "🌊 不要預測行情，要跟隨行情。",
-    "🧘‍♀️ 保持空手也是一種操作。",
-    "🔪 接刀子通常會滿手血，確認止跌再進場。",
-    "📉 順勢交易，不要隨便摸頭猜底。",
+    "📉 截斷虧損，讓利潤奔跑。", "🛑 進場靠技術，出場靠紀律。", "👀 新手看價，老手看量，高手看籌碼。",
+    "🐢 慢就是快，不要急著把錢輸光。", "💎 本金第一，獲利第二。", "🌊 不要預測行情，要跟隨行情。",
+    "🧘‍♀️ 保持空手也是一種操作。", "🔪 接刀子通常會滿手血，確認止跌再進場。", "📉 順勢交易，不要隨便摸頭猜底。",
     "💀 只有活下來的人，才有資格談獲利。"
 ]
 
-# CSS 優化：修復手機側邊欄消失問題
+# CSS 優化：彈窗置中 + 手機體驗
 st.markdown("""
 <style>
-    /* 1. 全域容器調整 */
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 0rem !important;
-        max-width: 100%;
-    }
-    
-    /* [關鍵修復] 移除 header 隱藏，讓手機左上角的 > 按鈕回來！ */
-    /* header {visibility: hidden;}  <-- 這一行殺死了側邊欄按鈕，已移除 */
-    
-    footer {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
+    /* 1. 全域容器 */
+    .block-container { padding-top: 1rem !important; padding-bottom: 0rem !important; max-width: 100%; }
+    footer {visibility: hidden;} #MainMenu {visibility: hidden;}
 
-    /* 2. 側邊欄間距壓縮 */
+    /* 2. 側邊欄與按鈕 */
     div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    section[data-testid="stSidebar"] .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px; }
+    div[data-testid="stSidebar"] button:contains("買進") { background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important; }
+    div[data-testid="stSidebar"] button:contains("賣出") { background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important; }
     
-    /* 3. 大按鈕優化 */
-    section[data-testid="stSidebar"] .stButton>button {
-        width: 100%; border-radius: 8px; font-weight: bold; height: 50px; font-size: 16px;
+    /* 3. 選單 Radio Button */
+    div[role="radiogroup"] { background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px; }
+    div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { color: #333333 !important; font-weight: 900 !important; font-size: 16px !important; }
+    div[role="radiogroup"] label { background-color: #e0e0e0 !important; border: 1px solid #cccccc !important; margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important; flex-grow: 1; text-align: center; }
+    div[role="radiogroup"] label[data-checked="true"] { background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important; }
+    div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p { color: #ffffff !important; }
+
+    /* 4. [關鍵修改] 震撼揭曉彈窗 (CSS Overlay) */
+    .reveal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(0, 0, 0, 0.7); /* 半透明黑背景 */
+        z-index: 9998;
+        backdrop-filter: blur(5px); /* 背景模糊效果 */
     }
+    .reveal-box {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 85%; max-width: 400px;
+        background-color: #ffffff;
+        color: #333;
+        border-radius: 20px;
+        padding: 30px;
+        text-align: center;
+        z-index: 9999;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        border: 4px solid #4CAF50;
+        animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+    .reveal-title { font-size: 28px; font-weight: 900; color: #4CAF50; margin-bottom: 10px; }
+    .reveal-stock { font-size: 22px; font-weight: bold; color: #333; margin-bottom: 20px; border-bottom: 2px dashed #eee; padding-bottom: 10px;}
+    .reveal-stat { font-size: 18px; margin: 5px 0; color: #555; }
+    .reveal-stat span { font-weight: bold; color: #000; }
     
-    /* 4. 買賣按鈕顏色 */
-    div[data-testid="stSidebar"] button:contains("買進") {
-        background-color: #ffe6e6 !important; color: #d90000 !important; border: 1px solid #d90000 !important;
-    }
-    div[data-testid="stSidebar"] button:contains("賣出") {
-        background-color: #e6ffe6 !important; color: #008000 !important; border: 1px solid #008000 !important;
-    }
-    
-    /* 5. 選單 Radio Button */
-    div[role="radiogroup"] {
-        background-color: transparent; padding: 5px; border-radius: 10px; margin-bottom: 10px;
-    }
-    div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        color: #333333 !important; font-weight: 900 !important; font-size: 16px !important;
-    }
-    div[role="radiogroup"] label {
-        background-color: #e0e0e0 !important; border: 1px solid #cccccc !important;
-        margin-right: 5px !important; padding: 10px 15px !important; border-radius: 8px !important;
-        flex-grow: 1; text-align: center;
-    }
-    div[role="radiogroup"] label[data-checked="true"] {
-        background-color: #ff4b4b !important; border: 1px solid #ff4b4b !important;
-    }
-    div[role="radiogroup"] label[data-checked="true"] div[data-testid="stMarkdownContainer"] p {
-        color: #ffffff !important;
+    @keyframes popIn {
+        0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+        100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
     }
 
-    /* 6. 其他樣式 */
-    .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
+    /* 5. 斷頭警告樣式 */
+    .margin-call-box {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 85%; max-width: 400px;
+        padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
+        text-align: center; font-size: 24px; font-weight: bold;
+        border: 4px solid #ff0000; z-index: 10000;
+        box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+    }
+
+    /* 其他 */
     .asset-box { padding: 10px; background-color: #f0f2f6; border-radius: 8px; margin-bottom: 10px; }
     .asset-label { font-size: 14px; color: #666; font-weight: bold; }
     .asset-value { font-size: 20px; font-weight: bold; color: #333; }
-    .warning-text {
-        color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800;
-        border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0;
-        line-height: 1.6; font-size: 14px;
-    }
-    .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
-    .reveal-box {
-        padding: 15px; background-color: #d4edda; color: #155724; border-radius: 8px;
-        text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 10px; border: 2px solid #c3e6cb;
-    }
-    .margin-call-box {
-        padding: 20px; background-color: #ffcccc; color: #cc0000; border-radius: 12px;
-        text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 20px; 
-        border: 3px solid #ff0000;
-    }
+    .price-text { font-size: 26px; font-weight: bold; color: #333; margin-bottom: 5px; }
+    .tip-box { background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px; font-size: 14px; border-left: 4px solid #2196f3; margin-top: 20px; }
     
-    /* 提示小卡樣式 */
-    .tip-box {
-        background-color: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 5px;
-        font-size: 14px; border-left: 4px solid #2196f3; margin-top: 20px;
-    }
+    .warning-text { color: #ff9800; font-weight: bold; padding: 10px; border: 1px dashed #ff9800; border-radius: 5px; margin-bottom: 20px; text-align: center; background-color: #fff3e0; line-height: 1.6; font-size: 14px; }
+    .warning-text a { color: #E1306C; text-decoration: none; border-bottom: 1px dashed #E1306C; }
+    
+    /* 圖表互動修正 */
+    .js-plotly-plot { touch-action: pan-y !important; }
+    .stPlotlyChart { touch-action: pan-y !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -228,7 +218,6 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (avg - price) * cover_qty
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
-                
                 st.session_state.balance += (principal_returned + profit - fee)
                 st.session_state.position += cover_qty
                 st.session_state.history.append(f"🔴 空單回補 {cover_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
@@ -253,7 +242,6 @@ def execute_trade(action, price, qty, current_step_index):
                 profit = (price - avg) * sell_qty; revenue = price * sell_qty
                 trade_roi = (price - avg) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
-
                 st.session_state.balance += (revenue - fee); st.session_state.position -= sell_qty
                 st.session_state.history.append(f"🟢 賣出 {sell_qty}股 (損: {int(profit)}, {trade_roi:.2f}%)")
                 if remaining_qty > 0:
@@ -368,9 +356,7 @@ else:
             st.stop()
 
         if st.session_state.first_load:
-            # [功能] 初始引導提示
-            st.toast("👈 手機用戶請點擊左上角「>」打開下單面板！", icon="💡")
-            st.info("👈 電腦/手機請點擊左上角「>」符號，打開控制面板開始下單！")
+            st.toast("👈 手機請點左上角「>」打開下單面板！", icon="💡")
             st.session_state.first_load = False
 
         curr_idx = st.session_state.step
@@ -390,14 +376,19 @@ else:
             real_name = st.session_state.stock_name
             real_ticker = st.session_state.ticker
             save_score(st.session_state.nickname, real_ticker, real_name, 0, -100.0)
+            
+            # [Fix] 使用 CSS Overlay 顯示斷頭畫面，避免跑版
             st.markdown(f"""
-            <div class='margin-call-box'>
+            <div class='reveal-overlay'></div>
+            <div class='margin-call-box' style='position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;'>
                 💀 幫QQ！保證金維持率不足，已被強制斷頭出場！<br>
-                <span style='font-size: 18px; color: #555;'>總資產歸零 | 真相：{real_name} ({real_ticker})</span>
+                <div style='font-size: 18px; color: #555; margin-top: 10px;'>總資產歸零</div>
+                <div style='font-size: 20px; color: #333; margin: 10px 0;'>真相：{real_name} ({real_ticker})</div>
             </div>
             """, unsafe_allow_html=True)
+            
             st.session_state.last_equity = 0 
-            if st.button("💸 破產重來 (資金重置)", type="primary", use_container_width=True):
+            if st.button("💸 破產重來 (按此復活)", type="primary", use_container_width=True):
                 reset_game()
                 st.rerun()
             st.stop()
@@ -446,20 +437,26 @@ else:
 
             st.divider()
             
+            # [關鍵修改] 彈窗 HTML 注入到主介面
             if st.button("🏳️ 結算 / 揭曉答案", use_container_width=True):
                 real_name = st.session_state.stock_name
                 real_ticker = st.session_state.ticker
                 save_score(st.session_state.nickname, real_ticker, real_name, est_total, roi)
                 st.balloons()
-                st.markdown(f"<div class='reveal-box'>🎉 真相大白：{real_name} ({real_ticker})</div>", unsafe_allow_html=True)
+                
+                # CSS Overlay 彈窗 (HTML)
+                st.markdown(f"""
+                <div class='reveal-overlay'></div>
+                <div class='reveal-box'>
+                    <div class='reveal-title'>🎉 真相大白</div>
+                    <div class='reveal-stock'>{real_name} ({real_ticker})</div>
+                    <div class='reveal-stat'>最終資產：<span>${int(est_total):,}</span></div>
+                    <div class='reveal-stat'>報酬率：<span>{roi:.2f}%</span></div>
+                    <div style='margin-top: 15px; font-size: 14px; color: #888;'>請等待 3 秒自動下一局...</div>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 st.session_state.last_equity = est_total
-                if st.session_state.accumulate_mode:
-                    msg = f"💰 本局結算 {int(est_total):,}，資金將帶入下一局！"
-                else:
-                    msg = "🔄 資金將重置為 1,000 萬"
-                
-                st.info(f"{msg} 請等待 3 秒...")
                 time.sleep(3); reset_game(); st.rerun()
 
             with st.popover("💬 回饋"):
@@ -467,7 +464,6 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            # [功能] 隨機交易金句
             tip = random.choice(TRADING_TIPS)
             st.markdown(f"<div class='tip-box'>💡 交易筆記：<br>{tip}</div>", unsafe_allow_html=True)
         
@@ -531,9 +527,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.12**: [UI] 修復手機側邊欄消失的 CSS 錯誤，新增新手引導與交易語錄。
-            * **v4.11**: [Mobile] 針對 Threads/LINE 瀏覽器進行極致優化，開啟 StaticPlot 模式，修復滑動卡死問題，並移除底部留白。
-            * **v4.8**: 優化手機體驗。
+            * **v4.13**: [UI] 新增「正中央彈窗」顯示結算結果，並優化 CSS Overlay。
+            * **v4.11**: [Mobile] 修復手機滑動卡死問題。
+            * **v4.6**: [Bug Fix] 修復空單回補本金計算。
             """)
         
         if st.session_state.auto_play:
