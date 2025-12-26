@@ -44,7 +44,7 @@ st.markdown("""
 
     .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
 
-    /* 5. 倒數計時樣式 */
+    /* 5. 倒數計時 */
     .countdown-box {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         font-size: 180px; font-weight: 900; color: #FFD700;
@@ -97,7 +97,7 @@ default_values = {
     'trade_returns': [], 'last_equity': 10000000.0,
     'show_hints': False,
     'round': 1, 'max_rounds': 3, 'in_countdown': False,
-    'nav_selection': "📊 操盤室" # [New] 控制分頁跳轉
+    'nav_selection': "📊 操盤室"
 }
 
 for key, value in default_values.items():
@@ -148,10 +148,15 @@ def calculate_technical_indicators(df):
     except: return df
 
 def load_data():
-    max_retries = 100
+    max_retries = 60 # 限制嘗試次數，避免無限迴圈
     ticker_list = list(HOT_STOCKS_MAP.keys())
-    for _ in range(max_retries):
+    
+    status_placeholder = st.empty() # 用來顯示搜尋進度
+    
+    for i in range(max_retries):
         selected_ticker = random.choice(ticker_list)
+        status_placeholder.info(f"🔍 正在掃描市場標的：{HOT_STOCKS_MAP[selected_ticker]} ({selected_ticker})...")
+        
         try:
             df = yf.download(selected_ticker, period="60d", interval="5m", progress=False)
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
@@ -159,8 +164,10 @@ def load_data():
             if len(df) < 300: continue
             
             # 價格過濾: <= 200
-            if df['Close'].iloc[-1] > 200: continue
+            current_price = df['Close'].iloc[-1]
+            if current_price > 200: continue
 
+            # 波動過濾
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
             if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
@@ -172,32 +179,36 @@ def load_data():
             start_idx = random.randint(50, max_start) if max_start > 50 else 50
             st.session_state.step = start_idx
             st.session_state.first_load = True
+            
+            status_placeholder.empty() # 清除進度條
             return selected_ticker, HOT_STOCKS_MAP[selected_ticker], df
         except: continue
+    
+    status_placeholder.error("搜尋超時，將隨機載入一檔。")
+    time.sleep(1)
+    status_placeholder.empty()
     return selected_ticker, HOT_STOCKS_MAP.get(selected_ticker, "未知"), df
 
-def reset_game(full_reset=False):
+# [修復] 將準備下一關的邏輯拆分，不在此處加載數據，避免UI卡死
+def prepare_next_round(full_reset=False):
     if full_reset:
         st.session_state.balance = 10000000.0
         st.session_state.round = 1
         st.session_state.trade_returns = []
         st.session_state.last_equity = 10000000.0
-        st.session_state.nav_selection = "📊 操盤室" # 重置回操盤室
+        st.session_state.nav_selection = "📊 操盤室"
     else:
         st.session_state.balance = st.session_state.last_equity
         st.session_state.round += 1
-        
+    
+    # 關鍵：清空數據，觸發主流程的重新加載
+    st.session_state.data = None 
     st.session_state.position = 0
     st.session_state.avg_cost = 0.0
     st.session_state.history = []
     st.session_state.trades_visual = []
     st.session_state.auto_play = False
-    
     st.session_state.in_countdown = True
-    
-    with st.spinner('🎲 搜尋高波動、股價<200 的妖股...'):
-        t, n, d = load_data()
-        st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
 
 def execute_trade(action, price, qty, current_step_index):
     try:
@@ -319,10 +330,10 @@ else:
                 show_hints = st.checkbox("🤖 啟用【AI 投顧提示】(K線圖顯示買賣訊號)")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name
-                    st.session_state.accumulate_mode = True # 強制 3 關制
+                    st.session_state.accumulate_mode = True
                     st.session_state.show_hints = show_hints
                     st.session_state.game_started = True
-                    reset_game(full_reset=True)
+                    prepare_next_round(full_reset=True)
                     st.rerun()
         
         with st.sidebar:
@@ -334,11 +345,18 @@ else:
                     else: st.error("錯誤")
 
     else:
+        # [核心修復] 在主流程中檢測數據是否為空，如果是，則觸發加載
+        # 這樣可以確保 UI 已經刷新，彈窗消失，然後才顯示載入動畫
+        if st.session_state.data is None:
+            with st.spinner('🎲 正在搜尋高波動、股價<200 的妖股...'):
+                t, n, d = load_data()
+                st.session_state.ticker = t; st.session_state.stock_name = n; st.session_state.data = d
+                st.rerun() # 載入完成後再次刷新，顯示圖表
+
         df = st.session_state.data
+        # 再次檢查確保 df 存在 (理論上上面的 if 會處理)
         if df is None:
-            st.error("資料載入失敗，請重試"); 
-            if st.button("重試"): reset_game(full_reset=True); st.rerun()
-            st.stop()
+             st.stop()
 
         if st.session_state.in_countdown:
             placeholder = st.empty()
@@ -381,7 +399,7 @@ else:
             """, unsafe_allow_html=True)
             
             if st.button("💸 重新挑戰", type="primary", use_container_width=True):
-                reset_game(full_reset=True)
+                prepare_next_round(full_reset=True)
                 st.rerun()
             st.stop()
 
@@ -438,7 +456,6 @@ else:
                 if st.session_state.round >= 3:
                     save_score(st.session_state.nickname, "ALL_CLEAR", "三關制霸", est_total, roi)
                     msg_main = f"🎉 恭喜通關！最終資產：${int(est_total):,}"
-                    # [Feature] 通關後自動跳轉
                     st.session_state.nav_selection = "🏆 英雄榜 (戰力積分)"
                 else:
                     msg_main = f"💰 Round {st.session_state.round} 完成！資產 ${int(est_total):,} 帶入下一關"
@@ -455,9 +472,10 @@ else:
                 
                 time.sleep(3)
                 if st.session_state.round >= 3:
-                    pass # 不用重置，直接轉跳英雄榜
+                    pass 
                 else:
-                    reset_game(full_reset=False)
+                    # 這裡只清空狀態，不下載數據，避免UI卡死
+                    prepare_next_round(full_reset=False)
                 st.rerun()
 
             with st.popover("💬 回饋"):
@@ -475,7 +493,6 @@ else:
                 st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
-        # [Fix] 綁定 session_state
         view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed", key="nav_selection")
 
         if view_mode == "📊 操盤室":
@@ -531,10 +548,8 @@ else:
         elif view_mode == "🏆 英雄榜 (戰力積分)":
             st.markdown("### 🏆 華爾街英雄榜")
             
-            # [New] 重玩按鈕
             if st.button("🔥 再戰一場 (Restart)", type="primary", use_container_width=True):
-                reset_game(full_reset=True)
-                st.session_state.nav_selection = "📊 操盤室"
+                prepare_next_round(full_reset=True)
                 st.rerun()
                 
             st.markdown("""
@@ -551,9 +566,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
-            * **v4.22**: [UX] 通關後自動跳轉英雄榜，並新增「再戰一場」按鈕，形成完整遊戲迴圈。
-            * **v4.21**: [GamePlay] 3關制生存戰，增加3-2-1倒數，只玩<200元股票。
-            * **v4.19**: [Logic] AI 投顧邏輯升級。
+            * **v4.23**: [BugFix] 修復結算視窗卡死問題，優化搜尋過程顯示。
+            * **v4.22**: [UX] 通關後自動跳轉英雄榜。
+            * **v4.21**: [GamePlay] 3關制生存戰。
             """)
         
         if st.session_state.auto_play:
