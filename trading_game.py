@@ -44,7 +44,7 @@ st.markdown("""
 
     .margin-call-box { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85%; max-width: 400px; padding: 30px; background-color: #ffcccc; color: #cc0000; border-radius: 12px; text-align: center; font-size: 24px; font-weight: bold; border: 4px solid #ff0000; z-index: 10000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.5); }
 
-    /* 5. [關鍵新增] 倒數計時樣式 */
+    /* 5. 倒數計時樣式 */
     .countdown-box {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         font-size: 180px; font-weight: 900; color: #FFD700;
@@ -96,7 +96,8 @@ default_values = {
     'auto_play': False, 'first_load': True, 'is_admin': False,
     'trade_returns': [], 'last_equity': 10000000.0,
     'show_hints': False,
-    'round': 1, 'max_rounds': 3, 'in_countdown': False
+    'round': 1, 'max_rounds': 3, 'in_countdown': False,
+    'nav_selection': "📊 操盤室" # [New] 控制分頁跳轉
 }
 
 for key, value in default_values.items():
@@ -147,7 +148,7 @@ def calculate_technical_indicators(df):
     except: return df
 
 def load_data():
-    max_retries = 100 # 提高重試次數，因為條件變嚴格了
+    max_retries = 100
     ticker_list = list(HOT_STOCKS_MAP.keys())
     for _ in range(max_retries):
         selected_ticker = random.choice(ticker_list)
@@ -157,10 +158,9 @@ def load_data():
             df = df[df['Volume'] > 0]
             if len(df) < 300: continue
             
-            # ★★★ 條件 1: 價格過濾 (只選 <= 200 元的) ★★★
+            # 價格過濾: <= 200
             if df['Close'].iloc[-1] > 200: continue
 
-            # 條件 2: 波動過濾 (震幅太小的不要)
             df['Fluctuation'] = (df['High'] - df['Low']) / df['Open'] * 100
             if df['Fluctuation'].mean() < 0.15 or df['Fluctuation'].max() < 1.5: continue
 
@@ -182,8 +182,8 @@ def reset_game(full_reset=False):
         st.session_state.round = 1
         st.session_state.trade_returns = []
         st.session_state.last_equity = 10000000.0
+        st.session_state.nav_selection = "📊 操盤室" # 重置回操盤室
     else:
-        # 過關接關
         st.session_state.balance = st.session_state.last_equity
         st.session_state.round += 1
         
@@ -193,7 +193,6 @@ def reset_game(full_reset=False):
     st.session_state.trades_visual = []
     st.session_state.auto_play = False
     
-    # 啟動倒數
     st.session_state.in_countdown = True
     
     with st.spinner('🎲 搜尋高波動、股價<200 的妖股...'):
@@ -204,12 +203,10 @@ def execute_trade(action, price, qty, current_step_index):
     try:
         price = float(price); pos = st.session_state.position; avg = st.session_state.avg_cost
         fee = price * qty * 0.002
-        
         if action == "buy":
             if pos < 0:
                 cover_qty = min(abs(pos), qty); remaining_qty = qty - cover_qty
-                principal_returned = avg * cover_qty
-                profit = (avg - price) * cover_qty
+                principal_returned = avg * cover_qty; profit = (avg - price) * cover_qty
                 trade_roi = (avg - price) / avg * 100
                 st.session_state.trade_returns.append(trade_roi)
                 st.session_state.balance += (principal_returned + profit - fee)
@@ -229,7 +226,6 @@ def execute_trade(action, price, qty, current_step_index):
                     st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position += qty
                     st.session_state.history.append(f"🔴 買進 {qty}股 @ {price:.2f}")
                 else: st.toast("❌ 資金不足", icon="💸")
-
         elif action == "sell":
             if pos > 0:
                 sell_qty = min(pos, qty); remaining_qty = qty - sell_qty
@@ -251,8 +247,7 @@ def execute_trade(action, price, qty, current_step_index):
                     total_cost = (avg * abs(pos)) + cost; new_pos_size = abs(pos) + qty
                     st.session_state.avg_cost = total_cost / new_pos_size; st.session_state.position -= qty
                     st.session_state.history.append(f"🟢 放空 {qty}股 @ {price:.2f}")
-                else: st.toast(f"❌ 資金不足！(放空保證金不足)", icon="💸")
-
+                else: st.toast(f"❌ 資金不足！", icon="💸")
         marker_type = 'buy' if action == 'buy' else 'sell'
         st.session_state.trades_visual.append({'index': current_step_index, 'price': price, 'type': marker_type})
     except Exception as e: pass
@@ -264,12 +259,7 @@ def save_score(player, ticker, name, assets, roi):
         total_profit = assets - 10000000
         profit_score = (total_profit / 10000) 
         power_score = (avg_sniper * 40) + (roi * 30) + (profit_score * 0.3 * 30) 
-        
-        new = pd.DataFrame([{
-            "日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": "三關通關", 
-            "綜合戰力": round(power_score, 1), "狙擊率(%)": round(avg_sniper, 2),
-            "總報酬(%)": round(roi, 2), "總獲利($)": int(total_profit)
-        }])
+        new = pd.DataFrame([{"日期": time.strftime("%Y-%m-%d %H:%M"), "玩家": player, "股名": "三關通關", "綜合戰力": round(power_score, 1), "狙擊率(%)": round(avg_sniper, 2), "總報酬(%)": round(roi, 2), "總獲利($)": int(total_profit)}])
         hdr = not os.path.exists(FILES["leaderboard"]); new.to_csv(FILES["leaderboard"], mode='a', header=hdr, index=False)
     except: pass
 
@@ -329,9 +319,9 @@ else:
                 show_hints = st.checkbox("🤖 啟用【AI 投顧提示】(K線圖顯示買賣訊號)")
                 if st.form_submit_button("🔥 進入操盤室", use_container_width=True):
                     st.session_state.nickname = name
+                    st.session_state.accumulate_mode = True # 強制 3 關制
                     st.session_state.show_hints = show_hints
                     st.session_state.game_started = True
-                    # 開始新遊戲，從第一關開始
                     reset_game(full_reset=True)
                     st.rerun()
         
@@ -350,14 +340,10 @@ else:
             if st.button("重試"): reset_game(full_reset=True); st.rerun()
             st.stop()
 
-        # ★★★ 3, 2, 1 倒數動畫 ★★★
         if st.session_state.in_countdown:
             placeholder = st.empty()
             for i in range(3, 0, -1):
-                placeholder.markdown(f"""
-                <div class='reveal-overlay'></div>
-                <div class='countdown-box'>{i}</div>
-                """, unsafe_allow_html=True)
+                placeholder.markdown(f"""<div class='reveal-overlay'></div><div class='countdown-box'>{i}</div>""", unsafe_allow_html=True)
                 time.sleep(1)
             placeholder.empty()
             st.session_state.in_countdown = False
@@ -373,7 +359,6 @@ else:
         curr_row = df.iloc[curr_idx]; curr_price = float(curr_row['Close'])
         
         masked_name = "❓❓❓❓"
-        
         pos = st.session_state.position; avg = st.session_state.avg_cost
         unrealized = (curr_price - avg) * pos if pos > 0 else (avg - curr_price) * abs(pos) if pos < 0 else 0
         est_total = st.session_state.balance + (pos * curr_price if pos > 0 else (abs(pos)*avg + unrealized if pos < 0 else 0))
@@ -384,7 +369,6 @@ else:
             st.session_state.auto_play = False
             real_name = st.session_state.stock_name
             real_ticker = st.session_state.ticker
-            # 破產時，直接紀錄失敗成績
             save_score(st.session_state.nickname, real_ticker, f"破產-{real_name}", 0, -100.0)
             
             st.markdown(f"""
@@ -403,8 +387,6 @@ else:
 
         with st.sidebar:
             st.markdown(f"#### 👤 {st.session_state.nickname}")
-            
-            # [UI] 顯示目前關卡
             st.info(f"🏆 目前關卡：Round {st.session_state.round} / 3")
             if st.session_state.show_hints: st.caption("🤖 AI 投顧提示 ON")
             
@@ -446,7 +428,6 @@ else:
 
             st.divider()
             
-            # [邏輯] 結算判斷
             btn_text = "🏁 結算本局 (下一關)" if st.session_state.round < 3 else "🏆 最終結算 (上榜)"
             if st.button(btn_text, use_container_width=True):
                 real_name = st.session_state.stock_name
@@ -454,10 +435,11 @@ else:
                 st.session_state.last_equity = est_total
                 st.balloons()
                 
-                # 如果是第3關，才紀錄成績
                 if st.session_state.round >= 3:
                     save_score(st.session_state.nickname, "ALL_CLEAR", "三關制霸", est_total, roi)
                     msg_main = f"🎉 恭喜通關！最終資產：${int(est_total):,}"
+                    # [Feature] 通關後自動跳轉
+                    st.session_state.nav_selection = "🏆 英雄榜 (戰力積分)"
                 else:
                     msg_main = f"💰 Round {st.session_state.round} 完成！資產 ${int(est_total):,} 帶入下一關"
 
@@ -473,9 +455,9 @@ else:
                 
                 time.sleep(3)
                 if st.session_state.round >= 3:
-                    reset_game(full_reset=True) # 3關結束，重置
+                    pass # 不用重置，直接轉跳英雄榜
                 else:
-                    reset_game(full_reset=False) # 下一關
+                    reset_game(full_reset=False)
                 st.rerun()
 
             with st.popover("💬 回饋"):
@@ -483,17 +465,18 @@ else:
                     t = st.text_area("內容"); submit = st.form_submit_button("送出")
                     if submit: save_feedback(st.session_state.nickname, t); st.toast("感謝")
             
-            # AI 投顧提示 (Smart Filter)
             if st.session_state.show_hints:
+                ma5 = curr_row['MA5']; ma22 = curr_row['MA22']; macd = curr_row['MACD']
                 is_bull = curr_row['Signal_Bull']; is_bear = curr_row['Signal_Bear']; slope = curr_row['MA22_Slope']
-                if is_bull: hint = "<span class='signal-bull'>🚀 攻擊訊號</span>：趨勢向上 + 動能增強，多頭發動！"
-                elif is_bear: hint = "<span class='signal-bear'>📉 棄守訊號</span>：趨勢轉弱 + 動能翻空，建議出場。"
+                if is_bull: hint = "<span class='signal-bull'>🚀 攻擊訊號</span>：趨勢向上 + 動能增強！"
+                elif is_bear: hint = "<span class='signal-bear'>📉 棄守訊號</span>：趨勢轉弱 + 動能翻空。"
                 elif slope > 0: hint = "<span class='signal-wait'>🧘‍♀️ 多頭回檔</span>：月線向上，短線整理。"
                 else: hint = "<span class='signal-wait'>👀 震盪觀望</span>：趨勢不明，耐心等待。"
                 st.markdown(f"<div class='tip-box'>🤖 AI 觀點：<br>{hint}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
-        view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed")
+        # [Fix] 綁定 session_state
+        view_mode = st.radio("功能切換", ["📊 操盤室", "🏆 英雄榜 (戰力積分)", "📜 版本日誌"], horizontal=True, label_visibility="collapsed", key="nav_selection")
 
         if view_mode == "📊 操盤室":
             display_start = max(0, curr_idx - 100)
@@ -547,6 +530,13 @@ else:
 
         elif view_mode == "🏆 英雄榜 (戰力積分)":
             st.markdown("### 🏆 華爾街英雄榜")
+            
+            # [New] 重玩按鈕
+            if st.button("🔥 再戰一場 (Restart)", type="primary", use_container_width=True):
+                reset_game(full_reset=True)
+                st.session_state.nav_selection = "📊 操盤室"
+                st.rerun()
+                
             st.markdown("""
             > **⚔️ 戰力公式**：
             > * **狙擊率 (40%)**：平均單筆交易報酬率，考驗你的精準度。
@@ -561,9 +551,9 @@ else:
         elif view_mode == "📜 版本日誌":
             st.markdown("### 📜 版本日誌")
             st.markdown("""
+            * **v4.22**: [UX] 通關後自動跳轉英雄榜，並新增「再戰一場」按鈕，形成完整遊戲迴圈。
             * **v4.21**: [GamePlay] 3關制生存戰，增加3-2-1倒數，只玩<200元股票。
             * **v4.19**: [Logic] AI 投顧邏輯升級。
-            * **v4.11**: [Mobile] 極致流暢滑動優化。
             """)
         
         if st.session_state.auto_play:
